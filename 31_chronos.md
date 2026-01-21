@@ -10,7 +10,7 @@ Chronos задаёт провокационный вопрос: а что есл
 
 Amazon выпустил две версии Chronos:
 
-- **Chronos (v1)** — оригинальная модель на базе T5 (encoder-decoder), март 2024
+- **Chronos (v1)** — оригинальная модель на базе [T5](https://arxiv.org/abs/1910.10683) (encoder-decoder), март 2024
 - **Chronos Bolt (v2)** — оптимизированная версия на базе T5-Efficient, декабрь 2024
 
 Chronos Bolt — не просто инкрементальное улучшение. Это переработанная архитектура, которая в 250 раз быстрее оригинала при сопоставимом или лучшем качестве. Если вы начинаете работу с Chronos сегодня — начинайте с Bolt.
@@ -19,7 +19,7 @@ Chronos Bolt — не просто инкрементальное улучшен
 
 ### Chronos v1 (оригинал)
 
-Оригинальный Chronos использует классическую T5-архитектуру:
+Оригинальный Chronos использует классическую [T5-архитектуру](https://arxiv.org/abs/1910.10683):
 
 - **Encoder-decoder** трансформер
 - **Авторегрессионная генерация** — токен за токеном
@@ -69,7 +69,7 @@ $$\text{token}(x) = \text{round}\left(\frac{x - x_{\min}}{x_{\max} - x_{\min}} \
 
 ## Архитектура Chronos v1: T5
 
-Оригинальный Chronos использует T5 (Text-to-Text Transfer Transformer).
+Оригинальный Chronos использует [T5](https://arxiv.org/abs/1910.10683) (Text-to-Text Transfer Transformer).
 
 ### Encoder
 
@@ -473,7 +473,7 @@ def plot_chronos_forecast(context, mean, quantiles, quantile_levels, title=''):
 
 ## Chronos vs другие модели
 
-|Критерий|Chronos Bolt|Chronos v1|TiRex|FlowState|
+|Критерий|Chronos Bolt|Chronos v1|[TiRex](https://arxiv.org/abs/2402.02868)|[FlowState](https://arxiv.org/abs/2403.08280)|
 |---|---|---|---|---|
 |Скорость|Быстро|Медленно|Средне|Быстро|
 |Контекст|2048|512|2048+|2048+|

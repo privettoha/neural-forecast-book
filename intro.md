@@ -11,13 +11,13 @@
 Книга разделена на три основные части:
 
 ### Часть 1: MLP-архитектуры
-Архитектуры на основе полносвязных сетей: N-BEATS, N-HiTS, TSMixer, DLinear. Эти модели показывают, что для временных рядов не всегда нужны сложные механизмы внимания.
+Архитектуры на основе полносвязных сетей: [N-BEATS](https://arxiv.org/abs/1905.10437), [N-HiTS](https://arxiv.org/abs/2201.12886), [TSMixer](https://arxiv.org/abs/2303.06053), [DLinear](https://arxiv.org/abs/2205.13504). Эти модели показывают, что для временных рядов не всегда нужны сложные механизмы внимания.
 
 ### Часть 2: Трансформеры и последовательные модели
-Адаптация трансформеров для временных рядов (PatchTST, iTransformer), рекуррентные подходы (DeepAR), а также современные альтернативы на базе xLSTM и State Space Models.
+Адаптация трансформеров для временных рядов ([PatchTST](https://arxiv.org/abs/2211.14730), [iTransformer](https://arxiv.org/abs/2310.06625)), рекуррентные подходы ([DeepAR](https://arxiv.org/abs/1704.04110)), а также современные альтернативы на базе [xLSTM](https://arxiv.org/abs/2405.04517) и State Space Models.
 
 ### Часть 3: Foundation Models
-Предобученные модели для zero-shot прогнозирования: Chronos, TimeGPT, TimesFM, Moirai, Lag-Llama и специализированные решения вроде Toto от Datadog.
+Предобученные модели для zero-shot прогнозирования: [Chronos](https://arxiv.org/abs/2403.07815), [TimeGPT](https://docs.nixtla.io/), [TimesFM](https://arxiv.org/abs/2310.10688), [Moirai](https://arxiv.org/abs/2402.02592), [Lag-Llama](https://arxiv.org/abs/2310.08278) и специализированные решения вроде [Toto](https://www.datadoghq.com/blog/ai-forecasting/) от Datadog.
 
 ## Для кого эта книга
 

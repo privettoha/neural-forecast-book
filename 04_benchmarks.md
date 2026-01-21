@@ -53,7 +53,7 @@ M5 использовал реальные данные Walmart: 42,000 иера
 
 ## Проблема «стандартных» бенчмарков
 
-После M4 и M5 сообщество deep learning сформировало свой набор «стандартных» датасетов для long-term forecasting: ETTh1, ETTh2, ETTm1, ETTm2, Electricity, Exchange-Rate, Traffic, Weather, ILI. Эти датасеты использовались в Informer, Autoformer, FEDformer, PatchTST и десятках других работ.
+После M4 и M5 сообщество deep learning сформировало свой набор «стандартных» датасетов для long-term forecasting: ETTh1, ETTh2, ETTm1, ETTm2, Electricity, Exchange-Rate, Traffic, Weather, ILI. Эти датасеты использовались в [Informer](https://arxiv.org/abs/2012.07436), [Autoformer](https://arxiv.org/abs/2106.13008), [FEDformer](https://arxiv.org/abs/2201.12740), [PatchTST](https://arxiv.org/abs/2211.14730) и десятках других работ.
 
 Проблема в том, что эти бенчмарки имеют серьёзные ограничения.
 
@@ -96,7 +96,7 @@ TFB показал, что эта проблема присутствует в �
 
 ### Monash Time Series Forecasting Archive
 
-**Что это:** Коллекция из 25+ датасетов в стандартизированном формате .tsf, созданная командой Monash University (включая Rob Hyndman — автора forecast и fable).
+**Что это:** Коллекция из 25+ датасетов в стандартизированном формате .tsf, созданная командой Monash University (включая [Rob Hyndman](https://robjhyndman.com/) — автора [forecast](https://pkg.robjhyndman.com/forecast/) и [fable](https://fable.tidyverts.org/)).
 
 **Характеристики:**
 
@@ -207,7 +207,7 @@ TFB показал, что эта проблема присутствует в �
 
 ### Probabilistic forecast метрики
 
-Если модель выдаёт не точечный прогноз, а распределение (как DeepAR, Lag-Llama, Chronos), нужны другие метрики.
+Если модель выдаёт не точечный прогноз, а распределение (как [DeepAR](https://arxiv.org/abs/1704.04110), [Lag-Llama](https://arxiv.org/abs/2310.08278), [Chronos](https://arxiv.org/abs/2403.07815)), нужны другие метрики.
 
 **CRPS (Continuous Ranked Probability Score):** $$CRPS(F, y) = \int_{-\infty}^{\infty}(F(x) - \mathbf{1}_{x \geq y})^2 dx$$
 

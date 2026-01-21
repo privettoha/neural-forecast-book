@@ -47,7 +47,7 @@ $$\hat{y}_{t+h} = y_t + h \cdot \frac{y_t - y_1}{t - 1}$$
 
 ## Код: реализация бейзлайнов
 
-Для единообразия мы используем библиотеку `statsforecast` от Nixtla, которая реализует эти бейзлайны эффективно и совместима с `neuralforecast` по интерфейсу.
+Для единообразия мы используем библиотеку [`statsforecast`](https://nixtlaverse.nixtla.io/statsforecast/) от Nixtla, которая реализует эти бейзлайны эффективно и совместима с [`neuralforecast`](https://nixtlaverse.nixtla.io/neuralforecast/) по интерфейсу.
 
 python
 
