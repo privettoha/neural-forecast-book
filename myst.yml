@@ -43,8 +43,8 @@ project:
 site:
   title: "Нейросети для временных рядов"
   options:
-    logo: ""
-    favicon: ""
+    logo: logo.png
+    favicon: logo.png
   nav: []
   actions:
     - title: GitHub
