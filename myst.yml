@@ -8,6 +8,7 @@ project:
   license: CC-BY-4.0
   thebe:
     binder:
+      url: https://mybinder.org
       repo: privettoha/neural-forecast-book
       ref: main
   jupyter: true
