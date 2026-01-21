@@ -1,5 +1,7 @@
 # TimeGPT: foundation model как сервис
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/32_timegpt.ipynb)
+
 ## Nixtla: компания за TimeGPT
 
 Прежде чем говорить о TimeGPT, стоит познакомиться с Nixtla — компанией, которая его создала, потому что контекст здесь важен для понимания продукта. Nixtla — это стартап, основанный в 2021 году командой, которая глубоко погружена в проблематику прогнозирования временных рядов и которая уже успела заработать репутацию в open-source сообществе.

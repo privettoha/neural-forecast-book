@@ -1,5 +1,7 @@
 # iTransformer. Внимание наоборот
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/22_itransformer.ipynb)
+
 ## Ключевая идея
 
 iTransformer задаёт простой вопрос: а что если мы неправильно применяли трансформеры к временным рядам всё это время? Традиционный подход — применять attention вдоль оси времени, позволяя каждому моменту «смотреть» на другие моменты. PatchTST улучшил это через группировку точек в патчи. Но iTransformer делает более радикальный шаг: он переворачивает оси местами и применяет attention вдоль оси переменных (каналов), а не вдоль оси времени.

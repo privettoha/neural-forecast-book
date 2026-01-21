@@ -1,5 +1,7 @@
 # Toto. Domain-specific модель для observability от Datadog
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/36_toto.ipynb)
+
 ## Почему универсальные модели недостаточны для observability
 
 До сих пор мы рассматривали фундаментальные модели, претендующие на универсальность — TimesFM, Moirai, Lag-Llama обучались на разнообразных данных из разных доменов с целью создать «модель для всего». Однако существуют области, где специфика данных настолько выражена, что универсальные модели систематически проигрывают специализированным решениям.

@@ -1,5 +1,7 @@
 # Chronos. Временной ряд как текст
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/31_chronos.ipynb)
+
 ## Ключевая идея
 
 Chronos задаёт провокационный вопрос: а что если временной ряд — это просто текст? Не метафорически, а буквально: возьмём значения ряда, превратим их в токены (как слова), и применим языковую модель для генерации следующих токенов (прогноза).

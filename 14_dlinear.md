@@ -1,5 +1,7 @@
 # DLinear. Почему простота побеждает
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/14_dlinear.ipynb)
+
 ## Ключевая идея
 
 В 2022 году группа исследователей из CUHK и Microsoft задала неудобный вопрос всему сообществу: действительно ли трансформеры эффективны для прогнозирования временных рядов? Их статья «Are Transformers Effective for Time Series Forecasting?» получила три оценки strong accept и была принята как Oral на AAAI 2023 — одну из топовых конференций по искусственному интеллекту.

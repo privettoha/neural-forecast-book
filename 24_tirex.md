@@ -1,5 +1,7 @@
 # TiRex. xLSTM возвращается
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/24_tirex.ipynb)
+
 ## Ключевая идея
 
 В 2025 году, когда всё внимание приковано к трансформерам и foundation models, команда NX-AI выпускает модель на основе xLSTM — модернизированной версии LSTM от Сеппа Хохрайтера, одного из создателей оригинальной архитектуры в 1997 году. И эта модель занимает топовые позиции на бенчмарках GIFT-Eval и Chronos-ZS, обходя многие трансформерные решения.

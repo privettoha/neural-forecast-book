@@ -1,5 +1,7 @@
 # TSMixer. Перемешивание вместо внимания
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/13_tsmixer.ipynb)
+
 ## Ключевая идея
 
 TSMixer — это ответ Google на вопрос, который мучил исследователей временных рядов несколько лет: почему трансформеры, доминирующие в NLP и computer vision, показывают неоднозначные результаты на временных рядах? Вместо того чтобы продолжать усложнять механизм внимания, авторы TSMixer пошли в противоположном направлении — взяли максимально простую архитектуру из компьютерного зрения (MLP-Mixer) и адаптировали её для временных рядов.
