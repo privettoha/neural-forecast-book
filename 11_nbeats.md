@@ -1,5 +1,7 @@
 # N-BEATS. Когда MLP достаточно
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/11_nbeats.ipynb)
+
 ## Ключевая идея
 
 N-BEATS — это архитектура, которая показала, что для прогнозирования временных рядов не нужны ни рекуррентные связи, ни механизм внимания. Обычные полносвязные слои, организованные правильным образом, способны побеждать LSTM и трансформеры на стандартных бенчмарках. Секрет не в сложности вычислительных блоков, а в том, как модель декомпозирует задачу прогнозирования на последовательность более простых подзадач.
@@ -107,8 +109,6 @@ N-BEATS эффективен по нескольким причинам, кот�
 Используем библиотеку `neuralforecast` от Nixtla — она предоставляет чистый API и совместима с нашими бейзлайнами из `statsforecast`.
 
 ```{code-cell} python
-:tags: [thebe-init]
-
 import pandas as pd
 import numpy as np
 from neuralforecast import NeuralForecast

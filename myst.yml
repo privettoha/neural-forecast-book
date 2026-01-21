@@ -7,8 +7,6 @@ project:
   github: https://github.com/privettoha/neural-forecast-book
   license: CC-BY-4.0
   jupyter: true
-  thebe:
-    binder_url: https://mybinder.org/v2/gh/privettoha/neural-forecast-book/main
   toc:
     - file: intro
     - title: "Введение"
