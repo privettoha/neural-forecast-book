@@ -6,12 +6,9 @@ project:
     - name: Anton Kiriltsev
   github: https://github.com/privettoha/neural-forecast-book
   license: CC-BY-4.0
-  thebe:
-    binder:
-      url: https://mybinder.org
-      repo: privettoha/neural-forecast-book
-      ref: main
   jupyter: true
+  thebe:
+    binder_url: https://mybinder.org/v2/gh/privettoha/neural-forecast-book/main
   toc:
     - file: intro
     - title: "Введение"
