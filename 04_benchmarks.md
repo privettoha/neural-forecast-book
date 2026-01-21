@@ -203,7 +203,11 @@ M5 использовал реальные данные Walmart: 42,000 иера
 
 где $F$ — CDF прогнозируемого распределения, $y$ — фактическое значение. Чем меньше CRPS, тем лучше. Обобщает MAE на случай вероятностных прогнозов.
 
-**Quantile Loss / Pinball Loss:** $$L_q(y, \hat{y}_q) = \begin{cases} q(y - \hat{y}_q) & \text{if } y \geq \hat{y}_q \ (1-q)(\hat{y}_q - y) & \text{if } y < \hat{y}_q \end{cases}$$
+**Quantile Loss / Pinball Loss:**
+
+$$
+L_q(y, \hat{y}_q) = \begin{cases} q(y - \hat{y}_q) & \text{if } y \geq \hat{y}_q \\ (1-q)(\hat{y}_q - y) & \text{if } y < \hat{y}_q \end{cases}
+$$
 
 Оценивает качество конкретного квантиля прогноза.
 
