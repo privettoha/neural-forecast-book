@@ -1,0 +1,51 @@
+version: 1
+project:
+  title: "Нейросети для прогнозирования временных рядов"
+  subtitle: "От классических архитектур до Foundation Models"
+  authors:
+    - name: Anton Kiriltsev
+  github: https://github.com/privettoha/neural-forecast-book
+  license: CC-BY-4.0
+  toc:
+    - file: intro
+    - title: "Введение"
+      children:
+        - file: 01_why_neural_networks
+        - file: 02_how_book_works
+        - file: 03_baselines
+        - file: 04_benchmarks
+        - file: 05_architecture_map
+    - title: "Часть 1: MLP-архитектуры"
+      children:
+        - file: 11_nbeats
+        - file: 12_nhits
+        - file: 13_tsmixer
+        - file: 14_dlinear
+    - title: "Часть 2: Трансформеры и последовательные модели"
+      children:
+        - file: 20_transformers_intro
+        - file: 21_patchtst
+        - file: 22_itransformer
+        - file: 23_deepar
+        - file: 24_tirex
+        - file: 25_flowstate
+    - title: "Часть 3: Foundation Models"
+      children:
+        - file: 30_foundation_models_intro
+        - file: 31_chronos
+        - file: 32_timegpt
+        - file: 33_timesfm
+        - file: 34_moirai
+        - file: 35_lag_llama
+        - file: 36_toto
+
+site:
+  title: "Нейросети для временных рядов"
+  options:
+    logo: ""
+    favicon: ""
+  nav: []
+  actions:
+    - title: GitHub
+      url: https://github.com/privettoha/neural-forecast-book
+  template: book-theme
