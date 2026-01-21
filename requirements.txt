@@ -1,0 +1,19 @@
+# Core data science
+numpy
+pandas
+matplotlib
+seaborn
+
+# Deep learning
+torch
+
+# Time series forecasting
+neuralforecast
+statsforecast
+datasetsforecast
+
+# For GluonTS examples
+gluonts
+
+# Jupyter Book build
+jupyter-book>=2.0

@@ -106,20 +106,32 @@ N-BEATS эффективен по нескольким причинам, кот�
 
 Используем библиотеку `neuralforecast` от Nixtla — она предоставляет чистый API и совместима с нашими бейзлайнами из `statsforecast`.
 
-python
+```{code-cell} python
+:tags: [thebe-init]
 
-```python
 import pandas as pd
 import numpy as np
 from neuralforecast import NeuralForecast
 from neuralforecast.models import NBEATS
 from neuralforecast.losses.pytorch import MAE
-from datasetsforecast.losses import mase
 
-# Загружаем данные Store Sales
-# Ожидаемый формат: unique_id, ds, y
-train = pd.read_csv('train.csv')
-train['ds'] = pd.to_datetime(train['ds'])
+# Создаём синтетические данные для демонстрации
+np.random.seed(42)
+dates = pd.date_range('2023-01-01', periods=365, freq='D')
+y = 100 + np.cumsum(np.random.randn(365)) + 20 * np.sin(np.arange(365) / 7 * 2 * np.pi)
+
+train = pd.DataFrame({
+    'unique_id': 'series_1',
+    'ds': dates,
+    'y': y
+})
+print(train.head())
+```
+
+```{code-cell} python
+# Загружаем данные Store Sales (если есть файл)
+# train = pd.read_csv('train.csv')
+# train['ds'] = pd.to_datetime(train['ds'])
 
 # Параметры
 HORIZON = 16
@@ -169,9 +181,7 @@ forecasts = nf.predict()
 
 ### Оценка качества
 
-python
-
-```python
+```{code-cell} python
 from statsforecast import StatsForecast
 from statsforecast.models import SeasonalNaive
 
@@ -226,9 +236,7 @@ print(f"Median MASE: {results_df['MASE'].median():.3f}")
 
 ### Визуализация декомпозиции (interpretable режим)
 
-python
-
-```python
+```{code-cell} python
 import matplotlib.pyplot as plt
 
 # Для interpretable модели можно извлечь компоненты
