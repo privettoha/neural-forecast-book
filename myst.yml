@@ -44,6 +44,7 @@ site:
   title: "Нейросети для временных рядов"
   options:
     logo: logo.png
+    logo_dark: logo_dark.png
     favicon: logo.png
   nav: []
   actions:
