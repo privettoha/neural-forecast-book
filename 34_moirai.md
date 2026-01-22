@@ -149,3 +149,12 @@ Moirai интегрирована с [GluonTS](https://ts.gluon.ai/stable/) — 
 **Сложность mixture distribution** — предсказание параметров смеси распределений добавляет сложности в обучение и инференс. В Moirai 2.0 авторы фактически отказались от mixture distribution в пользу квантильного прогнозирования.
 
 Тем не менее, Moirai остаётся одной из наиболее мощных и гибких фундаментальных моделей, особенно для задач, где важна работа с многомерными рядами и динамическими ковариатами.
+
+:::{seealso}
+**Источники и ссылки:**
+- Woo, G., et al. (2024). [Unified Training of Universal Time Series Forecasting Transformers](https://arxiv.org/abs/2402.02592). ICML 2024.
+- Woo, G., et al. (2024). [Moirai-MoE: Empowering Time Series Foundation Models with Sparse Mixture of Experts](https://arxiv.org/abs/2410.10469). arXiv.
+- [Uni2TS код](https://github.com/SalesforceAIResearch/uni2ts) — Salesforce GitHub
+- [LOTSA dataset](https://huggingface.co/datasets/Salesforce/lotsa_data) — 27B наблюдений для pretraining
+- [Salesforce Blog: Moirai](https://www.salesforce.com/blog/moirai/)
+:::

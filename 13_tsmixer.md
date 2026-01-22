@@ -380,3 +380,11 @@ plot_channel_correlations(train, test, forecasts, sample_channels)
 Мы рассмотрели три MLP-based архитектуры: N-BEATS заложил фундамент с идеей basis expansion и residual learning, N-HiTS добавил многомасштабную обработку, TSMixer показал силу простого mixing по двум осям.
 
 Следующая часть книги посвящена трансформерам — архитектурам, которые пытаются перенести успех attention-механизма из NLP на временные ряды. Мы начнём с обзорного поста о том, почему это оказалось сложнее, чем ожидалось, а затем разберём PatchTST и iTransformer — два подхода, которые нашли работающие способы адаптации трансформеров.
+
+:::{seealso}
+**Источники и ссылки:**
+- Chen, S., et al. (2023). [TSMixer: An All-MLP Architecture for Time Series Forecasting](https://arxiv.org/abs/2303.06053). TMLR 2023.
+- Tolstikhin, I., et al. (2021). [MLP-Mixer: An all-MLP Architecture for Vision](https://arxiv.org/abs/2105.01601). NeurIPS 2021.
+- [Google Research Blog: TSMixer](https://blog.research.google/2023/09/tsmixer-all-mlp-architecture-for-time.html)
+- [Официальный код TSMixer](https://github.com/google-research/google-research/tree/master/tsmixer) — Google Research GitHub
+:::

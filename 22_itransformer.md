@@ -328,3 +328,9 @@ corr = analyze_cross_correlation(train)
 Мы завершили обзор трансформерных архитектур для временных рядов. PatchTST показал, как патчинг решает проблему point-wise attention. iTransformer продемонстрировал, что иногда лучший способ использовать трансформер — это применить его не там, где ожидаешь.
 
 В следующей части мы обратимся к архитектурам, которые многие считали устаревшими — рекуррентным сетям и их современным наследникам. [DeepAR](https://arxiv.org/abs/1704.04110) заложил основы вероятностного прогнозирования с RNN. TiRex и FlowState показывают, что последовательные модели в форме xLSTM и State Space Models возвращаются и конкурируют с трансформерами на современных бенчмарках.
+
+:::{seealso}
+**Источники и ссылки:**
+- Liu, Y., et al. (2024). [iTransformer: Inverted Transformers Are Effective for Time Series Forecasting](https://arxiv.org/abs/2310.06625). ICLR 2024 Spotlight.
+- [Официальный код iTransformer](https://github.com/thuml/iTransformer) — Tsinghua GitHub
+:::

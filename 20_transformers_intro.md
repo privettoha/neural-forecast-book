@@ -111,3 +111,14 @@ Informer предложил ProbSparse attention — вычислять веса
 **Готовы ли вы к настройке?** Трансформеры чувствительнее к гиперпараметрам. Если нужен быстрый baseline — начните с чего-то проще.
 
 В следующих постах мы посмотрим, как PatchTST и iTransformer решают описанные проблемы и когда их использование оправдано.
+
+:::{seealso}
+**Источники и ссылки:**
+- Vaswani, A., et al. (2017). [Attention Is All You Need](https://arxiv.org/abs/1706.03762). NeurIPS 2017.
+- Wen, Q., et al. (2023). [Transformers in Time Series: A Survey](https://arxiv.org/abs/2202.07125). IJCAI 2023.
+- Zhou, H., et al. (2021). [Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting](https://arxiv.org/abs/2012.07436). AAAI 2021 Best Paper.
+- Wu, H., et al. (2021). [Autoformer: Decomposition Transformers with Auto-Correlation for Long-Term Series Forecasting](https://arxiv.org/abs/2106.13008). NeurIPS 2021.
+- Zhou, T., et al. (2022). [FEDformer: Frequency Enhanced Decomposed Transformer for Long-term Series Forecasting](https://arxiv.org/abs/2201.12740). ICML 2022.
+- [Hugging Face: Informer Tutorial](https://huggingface.co/blog/informer)
+- [Hugging Face: Autoformer Tutorial](https://huggingface.co/blog/autoformer)
+:::

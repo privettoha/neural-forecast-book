@@ -297,3 +297,9 @@ def plot_multiscale_forecast(model, sample_history, horizon):
 N-BEATS и N-HiTS показали, что MLP-архитектуры способны конкурировать с более сложными подходами. Но оба они работают только с историей целевой переменной — а что если у нас есть несколько связанных рядов или экзогенные переменные?
 
 В следующем посте мы рассмотрим [TSMixer](https://arxiv.org/abs/2303.06053) — модель от Google, которая применяет идею «mixing» из компьютерного зрения ([MLP-Mixer](https://arxiv.org/abs/2105.01601)) к временным рядам и показывает, что простые операции перемешивания по времени и по признакам могут конкурировать с трансформерами при работе с многомерными данными.
+
+:::{seealso}
+**Источники и ссылки:**
+- Challu, C., Olivares, K., et al. (2023). [N-HiTS: Neural Hierarchical Interpolation for Time Series Forecasting](https://arxiv.org/abs/2201.12886). AAAI 2023.
+- [NeuralForecast документация](https://nixtlaverse.nixtla.io/neuralforecast/models.nhits.html) — Nixtla
+:::

@@ -420,3 +420,11 @@ def pretrain_step(model, patches, mask_ratio=0.4):
 PatchTST решает проблему point-wise attention через группировку точек в патчи и обрабатывает каналы независимо. Но что если главные зависимости в данных — между каналами, а не во времени?
 
 В следующем посте мы рассмотрим iTransformer — модель, которая переворачивает традиционный подход с ног на голову, применяя attention по каналам, а не по времени. Этот «инвертированный» взгляд оказывается удивительно эффективным для определённого класса многомерных задач.
+
+:::{seealso}
+**Источники и ссылки:**
+- Nie, Y., et al. (2023). [A Time Series is Worth 64 Words: Long-term Forecasting with Transformers](https://arxiv.org/abs/2211.14730). ICLR 2023.
+- [Официальный код PatchTST](https://github.com/yuqinie98/PatchTST) — GitHub
+- [Hugging Face: PatchTST Tutorial](https://huggingface.co/blog/patchtst)
+- [Time-Series-Library](https://github.com/thuml/Time-Series-Library) — Tsinghua GitHub
+:::

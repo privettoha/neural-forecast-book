@@ -225,3 +225,10 @@ Foundation models для временных рядов можно классиф
 ## Что дальше
 
 В следующем посте мы начнём детальный разбор с Chronos — модели, которая превращает прогнозирование временных рядов в задачу генерации текста. Это радикальный подход с неочевидными преимуществами и ограничениями, который стоит понимать, даже если вы в итоге выберете другую модель.
+
+:::{seealso}
+**Источники и ссылки:**
+- Liang, Y., et al. (2024). [Foundation Models for Time Series: A Tutorial and Survey](https://arxiv.org/abs/2403.14735). arXiv.
+- Jin, M., et al. (2024). [Are Language Models Actually Useful for Time Series Forecasting?](https://arxiv.org/abs/2406.16964). NeurIPS 2024.
+- Goswami, M., et al. (2024). [MOMENT: A Family of Open Time-series Foundation Models](https://arxiv.org/abs/2402.03885). ICML 2024.
+:::

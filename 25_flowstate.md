@@ -416,3 +416,9 @@ print(f"FlowState output shape: {flowstate_median.shape}") # (50, 96)
 Мы завершили обзор RNN/SSM-based архитектур. DeepAR заложил основы вероятностного прогнозирования с глобальными моделями. TiRex показал, что модернизированные LSTM (xLSTM) конкурентоспособны с трансформерами. FlowState продемонстрировал уникальную возможность SSM — time-scale invariance.
 
 В следующей части мы переходим к Foundation Models — моделям, предобученным на огромных коллекциях данных и способным работать zero-shot на новых задачах. Начнём с обзорного поста об идее foundation models для временных рядов, а затем разберём конкретные архитектуры: [Chronos](https://arxiv.org/abs/2403.07815), [TimeGPT](https://docs.nixtla.io/), [TimesFM](https://arxiv.org/abs/2310.10688), [Moirai](https://arxiv.org/abs/2402.02592), [Lag-Llama](https://arxiv.org/abs/2310.08278) и [Toto](https://www.datadoghq.com/blog/ai-forecasting/).
+
+:::{seealso}
+**Источники и ссылки:**
+- Wang, Q., et al. (2024). [FlowState: Learning Time-Scale Invariant Representations for Time Series Forecasting](https://arxiv.org/abs/2403.08280). IBM Research.
+- Gu, A., et al. (2022). [Efficiently Modeling Long Sequences with Structured State Spaces](https://arxiv.org/abs/2111.00396). ICLR 2022.
+:::

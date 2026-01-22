@@ -227,3 +227,11 @@ Toto не существует изолированно — модель инт�
 Toto представляет важный вектор развития фундаментальных моделей временных рядов — движение от «одна модель для всего» к «специализированным моделям, которые также хороши в общем случае». Для практиков из области DevOps, SRE, IT-мониторинга Toto предлагает решение, которое понимает специфику их данных и значительно превосходит универсальные альтернативы.
 
 Открытость модели (Apache 2.0 лицензия, веса на HuggingFace, код на GitHub) позволяет сообществу использовать, изучать и развивать Toto, что делает её не только продуктом Datadog, но и вкладом в общее понимание того, как строить эффективные foundation models для структурированных данных.
+
+:::{seealso}
+**Источники и ссылки:**
+- Cohen, E., et al. (2025). [Toto: Time Series Optimized Transformer for Observability](https://arxiv.org/abs/2505.14766). arXiv.
+- [Toto GitHub](https://github.com/DataDog/toto)
+- [Toto на HuggingFace](https://huggingface.co/Datadog/Toto-Open-Base-1.0)
+- [Datadog Blog: Time Series Foundation Model](https://www.datadoghq.com/blog/datadog-time-series-foundation-model/)
+:::

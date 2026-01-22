@@ -335,3 +335,10 @@ plot_probabilistic_forecast(tss[0], forecasts[0], title=f'Прогноз для 
 DeepAR показал, что RNN могут работать для временных рядов при правильном подходе: глобальное обучение, вероятностный выход, ковариаты. Но классические LSTM имеют известные ограничения: затухание градиентов, сложность параллелизации, ограниченная память.
 
 В следующих постах мы рассмотрим, как современные последовательные архитектуры решают эти проблемы. TiRex использует [xLSTM](https://arxiv.org/abs/2405.04517) — расширенную версию LSTM с экспоненциальными гейтами и матричной памятью. FlowState строится на State Space Models, которые сочетают преимущества RNN и свёрточных сетей. Оба показывают state-of-the-art результаты в 2025 году, доказывая, что последовательные архитектуры рано списывать со счетов.
+
+:::{seealso}
+**Источники и ссылки:**
+- Salinas, D., et al. (2020). [DeepAR: Probabilistic Forecasting with Autoregressive Recurrent Networks](https://arxiv.org/abs/1704.04110). International Journal of Forecasting.
+- [GluonTS: Probabilistic Time Series Modeling](https://ts.gluon.ai/) — Amazon AWS
+- [PyTorch Forecasting: DeepAR](https://pytorch-forecasting.readthedocs.io/en/stable/api/pytorch_forecasting.models.deepar.DeepAR.html)
+:::

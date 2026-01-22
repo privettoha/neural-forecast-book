@@ -284,3 +284,12 @@ plt.show()
 ## Что дальше
 
 N-BEATS заложил фундамент для семейства MLP-based архитектур. В следующем посте мы рассмотрим N-HiTS — модель, которая решает проблему вычислительной сложности N-BEATS на длинных горизонтах через иерархическую интерполяцию и многомасштабную обработку входов.
+
+:::{seealso}
+**Источники и ссылки:**
+- Oreshkin, B., et al. (2020). [N-BEATS: Neural basis expansion analysis for interpretable time series forecasting](https://arxiv.org/abs/1905.10437). ICLR 2020.
+- Olivares, K., et al. (2022). [N-BEATSx: Neural basis expansion analysis with exogenous variables](https://arxiv.org/abs/2104.05522). International Journal of Forecasting.
+- [Официальная реализация N-BEATS](https://github.com/ServiceNow/N-BEATS) — ServiceNow GitHub
+- [NeuralForecast документация](https://nixtlaverse.nixtla.io/neuralforecast/models.nbeats.html) — Nixtla
+- [Darts документация](https://unit8co.github.io/darts/generated_api/darts.models.forecasting.nbeats.html) — Unit8
+:::

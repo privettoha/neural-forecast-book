@@ -487,3 +487,11 @@ def plot_chronos_forecast(context, mean, quantiles, quantile_levels, title=''):
 Chronos показал, что идея «ряд как текст» работает, а Bolt доказал, что её можно сделать практичной для продакшена. Квантизация, трансформер, direct forecasting — это работающий пайплайн.
 
 В следующем посте мы рассмотрим TimeGPT — закрытую модель от Nixtla, которая доступна только через API. Это другой подход к foundation models: вместо открытых весов — сервис с гарантированным качеством и простотой использования.
+
+:::{seealso}
+**Источники и ссылки:**
+- Ansari, A.F., et al. (2024). [Chronos: Learning the Language of Time Series](https://arxiv.org/abs/2403.07815). TMLR 2024.
+- Ansari, A.F., et al. (2025). [Chronos-Bolt: Efficient and Accurate Foundation Models for Time Series Forecasting](https://arxiv.org/abs/2510.15821). arXiv.
+- [Официальный код Chronos](https://github.com/amazon-science/chronos-forecasting) — Amazon Science GitHub
+- [Amazon Science Blog: Chronos](https://www.amazon.science/blog/adapting-language-model-architectures-for-time-series-forecasting)
+:::

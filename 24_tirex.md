@@ -379,3 +379,9 @@ plot_tirex_forecast(history, sample_quantiles, sample_mean,
 TiRex показывает, что улучшенные RNN (в форме xLSTM) могут конкурировать с трансформерами. Но это не единственный путь эволюции последовательных архитектур.
 
 В следующем посте мы рассмотрим FlowState — модель от IBM, построенную на State Space Models (SSM). SSM — это другой подход к моделированию последовательностей, который сочетает преимущества RNN (эффективный инференс) и свёрточных сетей (параллельное обучение). FlowState добавляет к этому уникальную возможность — time-scale invariance, позволяющую одной модели работать с данными разной частоты дискретизации без переобучения.
+
+:::{seealso}
+**Источники и ссылки:**
+- Merrill, N., et al. (2024). [TiRex: A Foundation Model for Time Series Forecasting](https://arxiv.org/abs/2402.02868). arXiv.
+- Beck, M., et al. (2024). [xLSTM: Extended Long Short-Term Memory](https://arxiv.org/abs/2405.04517). arXiv.
+:::

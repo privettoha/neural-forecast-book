@@ -324,11 +324,11 @@ TFB рекомендует использовать обе стратегии д
 
 ### Ключевые статьи по методологии
 
-- Makridakis et al. (2020). _The M4 Competition: 100,000 time series and 61 forecasting methods._ International Journal of Forecasting.
-- Makridakis et al. (2022). _M5 accuracy competition: Results, findings, and conclusions._ International Journal of Forecasting.
-- Qiu et al. (2024). _TFB: Towards Comprehensive and Fair Benchmarking of Time Series Forecasting Methods._ PVLDB.
-- Aksu et al. (2024). _GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation._ arXiv.
-- Godahewa et al. (2021). _Monash Time Series Forecasting Archive._ NeurIPS Datasets and Benchmarks.
+- Makridakis et al. (2020). [The M4 Competition: 100,000 time series and 61 forecasting methods](https://doi.org/10.1016/j.ijforecast.2019.04.014). International Journal of Forecasting.
+- Makridakis et al. (2022). [M5 accuracy competition: Results, findings, and conclusions](https://doi.org/10.1016/j.ijforecast.2021.01.006). International Journal of Forecasting.
+- Qiu et al. (2024). [TFB: Towards Comprehensive and Fair Benchmarking of Time Series Forecasting Methods](https://arxiv.org/abs/2403.20150). PVLDB.
+- Aksu et al. (2024). [GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation](https://arxiv.org/abs/2410.10393). arXiv.
+- Godahewa et al. (2021). [Monash Time Series Forecasting Archive](https://arxiv.org/abs/2105.06643). NeurIPS Datasets and Benchmarks.
 
 ---
 
