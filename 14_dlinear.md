@@ -6,7 +6,10 @@
 
 В 2022 году группа исследователей из CUHK и Microsoft задала неудобный вопрос всему сообществу: действительно ли трансформеры эффективны для прогнозирования временных рядов? Их статья [«Are Transformers Effective for Time Series Forecasting?»](https://arxiv.org/abs/2205.13504) получила три оценки strong accept и была принята как Oral на AAAI 2023 — одну из топовых конференций по искусственному интеллекту.
 
-Ответ оказался обескураживающим: простейшая линейная модель с одним слоем превзошла [Informer](https://arxiv.org/abs/2012.07436), [Autoformer](https://arxiv.org/abs/2106.13008), [FEDformer](https://arxiv.org/abs/2201.12740) и другие сложные архитектуры на девяти стандартных бенчмарках. Не на некоторых — практически на всех, и с заметным отрывом.
+Ответ оказался обескураживающим: простейшая линейная модель с одним слоем[^dlinear-arch] превзошла [Informer](https://arxiv.org/abs/2012.07436), [Autoformer](https://arxiv.org/abs/2106.13008), [FEDformer](https://arxiv.org/abs/2201.12740) и другие сложные архитектуры на девяти стандартных бенчмарках[^dlinear-main]. Не на некоторых — практически на всех, и с заметным отрывом.
+
+[^dlinear-arch]: Zeng, A., et al. "Are Transformers Effective for Time Series Forecasting?" AAAI 2023. Section 3.1, Figure 2. https://arxiv.org/abs/2205.13504
+[^dlinear-main]: Zeng, A., et al. "Are Transformers Effective for Time Series Forecasting?" AAAI 2023. Table 1: DLinear vs Autoformer, Informer, FEDformer на 9 датасетах. https://arxiv.org/abs/2205.13504
 
 Эта работа не просто предложила ещё одну модель — она поставила под сомнение целое направление исследований и заставила сообщество пересмотреть подходы к оценке прогнозных моделей.
 
