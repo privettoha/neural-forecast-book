@@ -131,9 +131,9 @@ Foundation models для временных рядов можно классиф
 
 **Encoder-only.** Модель строит представление входа, которое затем декодируется в прогноз простым слоем. [PatchTST](https://arxiv.org/abs/2211.14730), [Moirai](https://arxiv.org/abs/2402.02592).
 
-**Decoder-only.** Модель авторегрессионно генерирует прогноз токен за токеном. [Chronos](https://arxiv.org/abs/2403.07815), [Lag-Llama](https://arxiv.org/abs/2310.08278), [TimeGPT](https://docs.nixtla.io/).
+**Decoder-only.** Модель авторегрессионно генерирует прогноз токен за токеном. [TimesFM](https://arxiv.org/abs/2310.10688), [Lag-Llama](https://arxiv.org/abs/2310.08278), [TimeGPT](https://docs.nixtla.io/).
 
-**Encoder-decoder.** Классическая seq2seq архитектура. [TimesFM](https://arxiv.org/abs/2310.10688).
+**Encoder-decoder.** Классическая seq2seq архитектура. [Chronos](https://arxiv.org/abs/2403.07815) (на базе T5).
 
 ### По типу выхода
 
@@ -157,7 +157,7 @@ Foundation models для временных рядов можно классиф
 
 Наиболее комплексный бенчмарк на момент 2025 года. Включает 144 датасета из разных доменов, разных частот, разных горизонтов. Оценивает zero-shot качество по MASE, SMAPE и другим метрикам.
 
-Лидеры на момент написания: FlowState, TiRex, Moirai, Chronos.
+Лидеры на момент написания (2025): FlowState, TiRex, Moirai, Chronos. Актуальный лидерборд доступен на [HuggingFace](https://huggingface.co/spaces/Salesforce/GIFT-Eval).
 
 ### Chronos-ZS
 

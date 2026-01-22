@@ -147,7 +147,7 @@ model = NHITS(
     # Конфигурация стеков
     n_pool_kernel_size=[1, 2, 4],        # kernel sizes для MaxPool
     n_freq_downsample=[1, 2, 4],         # expressiveness ratios (обратные значения)
-    stack_types=['identity'] * 3,         # тип базиса (identity = generic)
+    stack_types=['identity'] * 3,         # тип базиса (identity — обучаемый базис без ограничений)
     n_blocks=[1, 1, 1],                   # по одному блоку в стеке
     mlp_units=[[256, 256], [256, 256], [256, 256]],
     
@@ -179,7 +179,7 @@ model_nbeats = NBEATS(
     input_size=4 * HORIZON,
     loss=MAE(),
     max_steps=1000,
-    stack_types=['generic'] * 3,
+    stack_types=['identity'] * 3,
     n_blocks=[1, 1, 1],
     mlp_units=[[256, 256], [256, 256], [256, 256]],
     scaler_type='standard',
