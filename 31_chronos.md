@@ -2,502 +2,224 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/31_chronos.ipynb)
 
-## Ключевая идея
+Chronos ([статья](https://arxiv.org/abs/2403.07815), TMLR 2024) — семейство моделей от Amazon, которое буквально превращает временной ряд в текст: значения ряда токенизируются как слова, и стандартная языковая модель обучается предсказывать следующие токены. С более чем **600 миллионами скачиваний** на HuggingFace, Chronos стал одним из самых популярных foundation models для временных рядов[^chronos-downloads]
 
-Chronos задаёт провокационный вопрос: а что если временной ряд — это просто текст? Не метафорически, а буквально: возьмём значения ряда, превратим их в токены (как слова), и применим языковую модель для генерации следующих токенов (прогноза).
+[^chronos-downloads]: Amazon Science Blog. "Chronos and Chronos-Bolt have been collectively downloaded over 600 million times from Hugging Face." https://www.amazon.science/blog/introducing-chronos-2-from-univariate-to-universal-forecasting
 
-Это звучит как хак, но за ним стоит глубокая интуиция. Языковые модели научились улавливать сложные зависимости в последовательностях: грамматику, контекст, долгосрочные связи. Если правильно закодировать временной ряд в последовательность токенов, может быть, эти же способности перенесутся на прогнозирование?
+## Идея
 
-Amazon выпустил две версии Chronos:
+Языковые модели научились улавливать сложные зависимости в последовательностях: грамматику, контекст, долгосрочные связи. Chronos задаёт вопрос: если правильно закодировать временной ряд в последовательность токенов, может быть, эти способности перенесутся на прогнозирование?[^chronos-idea]
 
-- **Chronos (v1)** — оригинальная модель на базе [T5](https://arxiv.org/abs/1910.10683) (encoder-decoder), март 2024
-- **Chronos Bolt (v2)** — оптимизированная версия на базе T5-Efficient, декабрь 2024
+[^chronos-idea]: Ansari, A.F., et al. "Chronos: Learning the Language of Time Series." TMLR 2024. Section 1: "What are the fundamental differences between a language model that predicts the next token, and a time series forecasting model that predicts the next values?" https://arxiv.org/abs/2403.07815
 
-Chronos Bolt — не просто инкрементальное улучшение. Это переработанная архитектура, которая в 250 раз быстрее оригинала при сопоставимом или лучшем качестве. Если вы начинаете работу с Chronos сегодня — начинайте с Bolt.
+Amazon выпустил три поколения:
 
-## Две версии: что изменилось
+➖ **Chronos (v1)** — оригинальная модель на базе T5 (encoder-decoder), март 2024[^chronos-v1]
+➖ **Chronos-Bolt** — оптимизированная версия, **250x быстрее**, ноябрь 2024[^chronos-bolt]
+➖ **Chronos-2** — поддержка **multivariate и covariates**, октябрь 2025[^chronos2]
 
-### Chronos v1 (оригинал)
-
-Оригинальный Chronos использует классическую [T5-архитектуру](https://arxiv.org/abs/1910.10683):
-
-- **Encoder-decoder** трансформер
-- **Авторегрессионная генерация** — токен за токеном
-- **Сэмплирование** для вероятностного прогноза
-- Размеры: Tiny (8M), Mini (20M), Small (46M), Base (200M), Large (710M)[^chronos-sizes]
-
-[^chronos-sizes]: Ansari, A., et al. "Chronos." 2024. Table 1: T5-tiny (20M) to T5-large (710M). https://arxiv.org/abs/2403.07815
-
-Главный недостаток — скорость. Авторегрессионная генерация означает, что для прогноза на H шагов нужно H последовательных вызовов decoder. Это медленно, особенно для длинных горизонтов.
-
-### Chronos Bolt (v2)
-
-Bolt переосмысливает архитектуру:
-
-- **T5-Efficient** с оптимизированными attention-паттернами
-- **Direct multi-step forecasting** — весь горизонт за один проход
-- **Детерминированный выход квантилей** вместо сэмплирования
-- Размеры: Tiny (9M), Mini (21M), Small (48M), Base (205M)
-
-Ключевые улучшения:
-
-- **В 250 раз быстрее** на GPU (в 20 раз на CPU)[^chronos-bolt]
-
-[^chronos-bolt]: Ansari, A., et al. "Chronos-Bolt." 2025. Section 4. https://arxiv.org/abs/2510.15821
-- **Лучше качество** на бенчмарках — #1 на Benchmark I и II в zero-shot
-- **Проще использовать** — не нужно сэмплирование для квантилей
+[^chronos-v1]: Ansari, A.F., et al. "Chronos: Learning the Language of Time Series." TMLR 2024. https://arxiv.org/abs/2403.07815
+[^chronos-bolt]: AWS Blog. "Fast and accurate zero-shot forecasting with Chronos-Bolt." December 2024. https://aws.amazon.com/blogs/machine-learning/fast-and-accurate-zero-shot-forecasting-with-chronos-bolt-and-autogluon/
+[^chronos2]: Ansari, A.F., et al. "Chronos-2: From Univariate to Universal Forecasting." arXiv:2510.15821. October 2025. https://arxiv.org/abs/2510.15821
 
 ## Токенизация: от чисел к словам
 
-Обе версии используют одинаковый подход к токенизации — это ядро идеи Chronos.
+Ключевая инновация Chronos — превращение непрерывных значений в дискретные токены[^chronos-tokenization]:
 
-### Scaling (масштабирование)
+[^chronos-tokenization]: Ansari, A.F., et al. "Chronos." TMLR 2024. Section 3.1. https://arxiv.org/abs/2403.07815
 
-Каждый ряд нормализуется на его среднее абсолютное значение в контексте:
+🔢 **Scaling (масштабирование)**
+Каждый ряд нормализуется на его среднее абсолютное значение:
 
 $$\tilde{x}_t = \frac{x_t}{\frac{1}{T}\sum_{i=1}^{T}|x_i| + \epsilon}$$
 
-Это делает модель инвариантной к масштабу: ряд с значениями 0–100 и ряд с значениями 0–1000000 после нормализации выглядят похоже.
+Это делает модель инвариантной к масштабу: ряд 0–100 и ряд 0–1000000 после нормализации выглядят похоже
 
-### Quantization (квантизация)
+🔢 **Quantization (квантизация)**
+Нормализованные значения квантуются в один из **4096 бинов**[^chronos-bins]:
 
-После нормализации значения квантуются в один из $B$ бинов[^chronos-token]. Chronos использует $B = 4096$ бинов, равномерно распределённых в диапазоне, покрывающем типичные нормализованные значения.
-
-[^chronos-token]: Ansari, A., et al. "Chronos: Learning the Language of Time Series." 2024. Section 3.1. https://arxiv.org/abs/2403.07815
+[^chronos-bins]: GitHub: amazon-science/chronos-forecasting. "Chronos-T5 models use 4096 different tokens, compared to 32128 of the original T5 models." https://github.com/amazon-science/chronos-forecasting
 
 $$\text{token}(x) = \text{round}\left(\frac{x - x_{\min}}{x_{\max} - x_{\min}} \cdot (B - 1)\right)$$
 
-Каждый бин — один токен в словаре модели. Временной ряд буквально превращается в последовательность «слов».
+Каждый бин — один токен в словаре. Временной ряд буквально становится последовательностью «слов»
 
-### Обратное преобразование
+🔢 **Специальные токены**
+➖ PAD — padding/missing values
+➖ EOS — end-of-sequence[^chronos-special]
 
-При декодировании прогноза токены превращаются обратно в числа, затем применяется обратное масштабирование.
+[^chronos-special]: Amazon Science Blog. "In addition to these bin tokens, we add two special tokens, PAD and EOS, to denote padding/missing values and end-of-sequence." https://www.amazon.science/blog/adapting-language-model-architectures-for-time-series-forecasting
 
 ## Архитектура Chronos v1: T5
 
-Оригинальный Chronos использует [T5](https://arxiv.org/abs/1910.10683) (Text-to-Text Transfer Transformer).
+Оригинальный Chronos использует [T5](https://arxiv.org/abs/1910.10683) (Text-to-Text Transfer Transformer) без модификаций архитектуры — только размер словаря уменьшен до 4096[^chronos-t5]:
 
-### Encoder
-
-```
-Токены истории: [t_1, t_2, ..., t_T]
-    ↓
-Token embeddings + Positional encoding
-    ↓
-Transformer Encoder (self-attention)
-    ↓
-Encoded representation
-```
-
-### Decoder (авторегрессионный)
+[^chronos-t5]: Ansari, A.F., et al. "Chronos." TMLR 2024. Section 3.2: "Chronos follows a minimalist approach by tokenizing time series values into a fixed vocabulary and training existing language model architectures on these tokens without any time-series-specific design." https://arxiv.org/abs/2403.07815
 
 ```
-Для каждого шага прогноза:
+Encoder:
+  Токены истории → Token embeddings + Positional encoding
+    → Transformer Encoder (self-attention)
+    → Encoded representation
+
+Decoder (авторегрессионный):
+  Для каждого шага прогноза:
     Encoded history + Ранее сгенерированные токены
-        ↓
-    Masked self-attention
-        ↓
-    Cross-attention на encoder output
-        ↓
-    Softmax → распределение над словарём
-        ↓
-    Sample токен
+      → Masked self-attention
+      → Cross-attention на encoder output
+      → Softmax → распределение над словарём
+      → Sample токен
 ```
 
-Вероятностный прогноз получается через многократное сэмплирование разных траекторий.
+Вероятностный прогноз через многократное сэмплирование траекторий
 
-## Архитектура Chronos Bolt: T5-Efficient
+🔢 **Размеры моделей v1:**
 
-Bolt использует переработанную архитектуру.
+| Модель | Параметры | Контекст |
+|--------|-----------|----------|
+| chronos-t5-tiny | 8M | 512 |
+| chronos-t5-mini | 20M | 512 |
+| chronos-t5-small | 46M | 512 |
+| chronos-t5-base | 200M | 512 |
+| chronos-t5-large | 710M | 512 |
 
-### Direct forecasting
+## Chronos-Bolt: 250x быстрее
 
-Вместо генерации токен-за-токеном, Bolt предсказывает весь горизонт за один forward pass:
+Chronos-Bolt (ноябрь 2024) переосмысливает архитектуру для скорости[^bolt-arch]:
 
-```
-Токены истории
-    ↓
-T5-Efficient Encoder
-    ↓
-Decoder (один проход)
-    ↓
-Output: квантили для всех шагов горизонта сразу
-```
+[^bolt-arch]: HuggingFace: amazon/chronos-bolt-base. "Chronos-Bolt is based on the T5 encoder-decoder architecture and has been trained on nearly 100 billion time series observations." https://huggingface.co/amazon/chronos-bolt-base
 
-### Предсказание квантилей напрямую
+🔢 **Patching вместо токенизации**
+История разбивается на патчи из нескольких наблюдений, которые подаются в encoder
 
-Вместо сэмплирования траекторий Bolt напрямую выдаёт квантили (p10, p50, p90 и др.) как выходы модели. Это:
+🔢 **Direct multi-step forecasting**
+Вместо авторегрессионной генерации токен-за-токеном, decoder выдаёт **весь горизонт за один проход** — квантили для всех шагов сразу[^bolt-direct]
 
-- Быстрее (один проход вместо многих сэмплов)
-- Стабильнее (нет variance от сэмплирования)
-- Проще в использовании
+[^bolt-direct]: AWS Blog. "The decoder then uses these representations to directly generate quantile forecasts across multiple future steps—a method known as direct multi-step forecasting." https://aws.amazon.com/blogs/machine-learning/fast-and-accurate-zero-shot-forecasting-with-chronos-bolt-and-autogluon/
 
-### Оптимизации
+🔢 **Результаты:**
+➖ **В 250 раз быстрее** на GPU (в 20 раз на CPU)[^bolt-speed]
+➖ **В 20 раз меньше памяти**
+➖ **На 5% точнее** (меньше WQL)
+➖ Контекст до **2048** (vs 512 у v1)
+➖ Bolt-Base превосходит v1-Large, будучи в 600 раз быстрее[^bolt-vs-large]
 
-- Efficient attention patterns — меньше вычислений при сохранении качества
-- KV-cache оптимизации
-- Лучший batching
+[^bolt-speed]: GitHub: amazon-science/chronos-forecasting. "Chronos-Bolt models are more accurate (5% lower error), up to 250x faster and 20x more memory efficient." https://github.com/amazon-science/chronos-forecasting
+[^bolt-vs-large]: HuggingFace: amazon/chronos-bolt-base. "Chronos-Bolt (Base) surpasses the original Chronos (Large) model while being over 600 times faster." https://huggingface.co/amazon/chronos-bolt-base
 
-## Размеры моделей
+🔢 **Размеры Bolt:**
 
-### Chronos v1
+| Модель | Параметры | Контекст |
+|--------|-----------|----------|
+| chronos-bolt-tiny | 9M | 2048 |
+| chronos-bolt-mini | 21M | 2048 |
+| chronos-bolt-small | 48M | 2048 |
+| chronos-bolt-base | 205M | 2048 |
 
-|Модель|Параметры|Контекст|Рекомендации|
-|---|---|---|---|
-|chronos-t5-tiny|8M|512|CPU, быстрый прототип|
-|chronos-t5-mini|20M|512|Баланс|
-|chronos-t5-small|46M|512|Хорошее качество|
-|chronos-t5-base|200M|512|Высокое качество|
-|chronos-t5-large|710M|512|Максимальное качество|
+## Chronos-2: Multivariate и Covariates
 
-### Chronos Bolt (v2)
+Chronos-2 (октябрь 2025) — ключевое обновление, которое решает главное ограничение предыдущих версий[^chronos2-paper]:
 
-|Модель|Параметры|Контекст|Рекомендации|
-|---|---|---|---|
-|chronos-bolt-tiny|9M|2048|CPU, продакшн|
-|chronos-bolt-mini|21M|2048|Отличный баланс|
-|chronos-bolt-small|48M|2048|Рекомендуется|
-|chronos-bolt-base|205M|2048|Максимальное качество|
+[^chronos2-paper]: Ansari, A.F., et al. "Chronos-2: From Univariate to Universal Forecasting." arXiv:2510.15821. October 2025. https://arxiv.org/abs/2510.15821
 
-Обратите внимание: Bolt поддерживает контекст до 2048 токенов — в 4 раза больше, чем v1.
+🔢 **Новые возможности:**
+➖ **Univariate** — как раньше
+➖ **Multivariate** — несколько связанных рядов одновременно
+➖ **Covariates** — внешние переменные (past-only и known future)
 
-## Сравнение производительности
+🔢 **Архитектура:**
+➖ **Encoder-only** (120M параметров) на основе T5 encoder
+➖ **Group attention** — механизм для обмена информацией между группами рядов (variates, covariates)[^chronos2-group]
+➖ Multi-step quantile forecasts за один проход
 
-Amazon приводит следующие цифры для Bolt vs v1:
+[^chronos2-group]: Ansari, A.F., et al. "Chronos-2." arXiv:2510.15821. Abstract: "Chronos-2 employs a group attention mechanism that facilitates in-context learning through efficient information sharing across multiple time series within a group." https://arxiv.org/abs/2510.15821
 
-|Метрика|Chronos v1|Chronos Bolt|Улучшение|
-|---|---|---|---|
-|GPU throughput|1x|250x|В 250 раз|
-|CPU throughput|1x|20x|В 20 раз|
-|Качество (WQL)|Baseline|Лучше|+5-15%|
-|Контекст|512|2048|В 4 раза|
+🔢 **Результаты:**
+➖ **SOTA** на fev-bench, GIFT-Eval, Chronos Benchmark II
+➖ **Win rate >90%** против Chronos-Bolt в head-to-head сравнениях[^chronos2-winrate]
+➖ **300+ прогнозов в секунду** на одном A10G GPU
 
-На практике это означает: прогноз, который на v1 занимал минуту, на Bolt занимает доли секунды.
+[^chronos2-winrate]: HuggingFace: amazon/chronos-2. "Chronos-2 achieves a win rate of over 90% against Chronos-Bolt in head-to-head comparisons." https://huggingface.co/amazon/chronos-2
 
-## Сильные стороны
+🔢 **Синтетические данные:**
+Для обучения multivariate capabilities используются синтетические данные, где multivariate структура накладывается на univariate ряды[^chronos2-synthetic]
 
-**Chronos v1:**
+[^chronos2-synthetic]: Ansari, A.F., et al. "Chronos-2." arXiv:2510.15821. Section 3: "To enable its ICL capabilities, we rely on synthetic time series data generated by imposing multivariate structure on time series sampled from base univariate generators." https://arxiv.org/abs/2510.15821
 
-- Полностью вероятностный выход через сэмплирование
-- Можно получить произвольные квантили
-- Гибкость генерации (temperature, top-k, top-p)
-- Хорошо изученная архитектура T5
+## Что умеет
 
-**Chronos Bolt:**
+➖ **Universal tokenization** — работает на данных любого масштаба и частоты
+➖ **Zero-shot** из коробки — не нужно обучение на своих данных
+➖ **Вероятностный выход** — сэмплы (v1) или квантили (Bolt, v2)
+➖ **Covariates** (только Chronos-2) — внешние факторы
+➖ **Multivariate** (только Chronos-2) — связанные ряды
+➖ **Открытые веса и код** — Apache-2.0 license
+➖ **CPU inference** — особенно Bolt-tiny[^chronos-cpu]
 
-- Радикально быстрее — пригоден для продакшена
-- Больший контекст (2048 vs 512)
-- Лучшее качество на бенчмарках
-- Стабильные квантили без variance сэмплирования
-- Проще в использовании
+[^chronos-cpu]: GitHub: amazon-science/chronos-forecasting. "device_map='cpu' for CPU inference." https://github.com/amazon-science/chronos-forecasting
 
-**Общие:**
+## Когда использовать
 
-- Универсальность — работает на данных любого масштаба и частоты
-- Zero-shot из коробки
-- Открытые веса и код
-- Работа на CPU (особенно Bolt-tiny)
+👍 **Хорошо работает:**
+➖ Zero-shot прогноз без обучения
+➖ Нужны ковариаты → **Chronos-2**
+➖ Multivariate данные → **Chronos-2**
+➖ Продакшн, нужна скорость → **Chronos-Bolt**
+➖ CPU inference → **Bolt-tiny**
+➖ Произвольные квантили (0.95) → **v1** (сэмплирование)
 
-## Ограничения
-
-**Chronos v1:**
-
-- Очень медленный inference
-- Ограниченный контекст (512)
-- Много сэмплов для стабильных квантилей
-
-**Chronos Bolt:**
-
-- Фиксированный набор квантилей (нельзя запросить произвольный)
-- Нет контроля temperature/sampling
-
-**Общие:**
-
-- Потеря точности при квантизации
-- Нет поддержки ковариат
-- Чувствительность к выбросам в масштабировании
-
-## Код: Chronos
-
-### Chronos Bolt (рекомендуется)
-
-python
-
-```python
-import torch
-import numpy as np
-import pandas as pd
-from chronos import BaseChronosPipeline
-
-# Загрузка Bolt модели
-pipeline = BaseChronosPipeline.from_pretrained(
-    "amazon/chronos-bolt-small",
-    device_map="cuda",  # или "cpu"
-    torch_dtype=torch.bfloat16,
-)
-
-# Подготовка данных
-context = torch.tensor([
-    [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
-    [10.0, 20.0, 15.0, 25.0, 30.0, 20.0, 35.0, 40.0, 45.0, 50.0],
-])
-
-# Прогнозирование
-# Bolt возвращает квантили напрямую, без сэмплирования
-quantiles, mean = pipeline.predict_quantiles(
-    context,
-    prediction_length=12,
-    quantile_levels=[0.1, 0.5, 0.9],  # какие квантили нужны
-)
-
-# quantiles shape: (batch, num_quantiles, prediction_length)
-# mean shape: (batch, prediction_length)
-print(f"Quantiles shape: {quantiles.shape}")
-print(f"Mean shape: {mean.shape}")
-
-# Доступ к конкретным квантилям
-p10 = quantiles[:, 0, :]  # 10-й перцентиль
-p50 = quantiles[:, 1, :]  # медиана
-p90 = quantiles[:, 2, :]  # 90-й перцентиль
-```
-
-### Chronos v1 (если нужно сэмплирование)
-
-python
-
-```python
-from chronos import ChronosPipeline
-
-# Загрузка v1 модели
-pipeline_v1 = ChronosPipeline.from_pretrained(
-    "amazon/chronos-t5-small",
-    device_map="cuda",
-    torch_dtype=torch.bfloat16,
-)
-
-# Прогнозирование с сэмплированием
-forecast = pipeline_v1.predict(
-    context,
-    prediction_length=12,
-    num_samples=100,  # количество траекторий
-    temperature=1.0,
-    top_k=50,
-    top_p=1.0,
-)
-
-# forecast shape: (batch, num_samples, prediction_length)
-print(f"Forecast shape: {forecast.shape}")
-
-# Квантили из сэмплов
-p10 = np.percentile(forecast.numpy(), 10, axis=1)
-p50 = np.percentile(forecast.numpy(), 50, axis=1)
-p90 = np.percentile(forecast.numpy(), 90, axis=1)
-```
-
-### Сравнение скорости v1 vs Bolt
-
-python
-
-```python
-import time
-
-def benchmark_chronos_versions(context, prediction_length=24):
-    """Сравнение скорости Chronos v1 и Bolt."""
-    
-    results = {}
-    
-    # Bolt
-    bolt = BaseChronosPipeline.from_pretrained(
-        "amazon/chronos-bolt-small",
-        device_map="cuda",
-        torch_dtype=torch.bfloat16,
-    )
-    
-    # Warmup
-    _ = bolt.predict_quantiles(context, prediction_length=10, quantile_levels=[0.5])
-    
-    # Benchmark Bolt
-    start = time.time()
-    for _ in range(100):
-        _ = bolt.predict_quantiles(
-            context, 
-            prediction_length=prediction_length,
-            quantile_levels=[0.1, 0.5, 0.9]
-        )
-    bolt_time = (time.time() - start) / 100
-    results['bolt'] = bolt_time
-    
-    del bolt
-    torch.cuda.empty_cache()
-    
-    # v1
-    v1 = ChronosPipeline.from_pretrained(
-        "amazon/chronos-t5-small",
-        device_map="cuda",
-        torch_dtype=torch.bfloat16,
-    )
-    
-    # Warmup
-    _ = v1.predict(context, prediction_length=10, num_samples=10)
-    
-    # Benchmark v1
-    start = time.time()
-    for _ in range(10):  # меньше итераций, потому что медленнее
-        _ = v1.predict(
-            context,
-            prediction_length=prediction_length,
-            num_samples=20
-        )
-    v1_time = (time.time() - start) / 10
-    results['v1'] = v1_time
-    
-    print(f"Chronos v1: {v1_time:.3f}s per forecast")
-    print(f"Chronos Bolt: {bolt_time:.3f}s per forecast")
-    print(f"Speedup: {v1_time / bolt_time:.1f}x")
-    
-    return results
-
-# Тест
-test_context = torch.randn(10, 256)  # 10 рядов
-benchmark_chronos_versions(test_context.cuda())
-```
-
-### Работа с pandas DataFrame
-
-python
-
-```python
-def chronos_bolt_forecast_df(df, pipeline, prediction_length, 
-                              quantile_levels=[0.1, 0.5, 0.9]):
-    """
-    Прогнозирование Chronos Bolt для DataFrame.
-    """
-    results = []
-    
-    for uid in df['unique_id'].unique():
-        series = df[df['unique_id'] == uid].sort_values('ds')['y'].values
-        context = torch.tensor(series).unsqueeze(0).float()
-        
-        # Прогноз
-        quantiles, mean = pipeline.predict_quantiles(
-            context.to(pipeline.device),
-            prediction_length=prediction_length,
-            quantile_levels=quantile_levels
-        )
-        
-        quantiles_np = quantiles[0].cpu().numpy()
-        mean_np = mean[0].cpu().numpy()
-        
-        for h in range(prediction_length):
-            result = {
-                'unique_id': uid,
-                'horizon': h + 1,
-                'forecast': mean_np[h],
-            }
-            for i, q in enumerate(quantile_levels):
-                result[f'p{int(q*100)}'] = quantiles_np[i, h]
-            results.append(result)
-    
-    return pd.DataFrame(results)
-
-# Использование
-forecast_df = chronos_bolt_forecast_df(
-    train, pipeline, 
-    prediction_length=16,
-    quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9]
-)
-```
-
-### Визуализация
-
-python
-
-```python
-import matplotlib.pyplot as plt
-
-def plot_chronos_forecast(context, mean, quantiles, quantile_levels, title=''):
-    """Визуализация прогноза Chronos с интервалами."""
-    
-    fig, ax = plt.subplots(figsize=(12, 5))
-    
-    # История
-    history_idx = range(len(context))
-    ax.plot(history_idx, context, 'b-', linewidth=2, label='История')
-    
-    # Прогноз
-    forecast_start = len(context)
-    horizon = len(mean)
-    forecast_idx = range(forecast_start, forecast_start + horizon)
-    
-    # Находим индексы квантилей для интервалов
-    q_dict = {q: i for i, q in enumerate(quantile_levels)}
-    
-    # 80% интервал (если есть p10 и p90)
-    if 0.1 in q_dict and 0.9 in q_dict:
-        ax.fill_between(
-            forecast_idx,
-            quantiles[q_dict[0.1]],
-            quantiles[q_dict[0.9]],
-            alpha=0.2, color='red', label='80% интервал'
-        )
-    
-    # 50% интервал (если есть p25 и p75)
-    if 0.25 in q_dict and 0.75 in q_dict:
-        ax.fill_between(
-            forecast_idx,
-            quantiles[q_dict[0.25]],
-            quantiles[q_dict[0.75]],
-            alpha=0.3, color='red', label='50% интервал'
-        )
-    
-    # Медиана или mean
-    ax.plot(forecast_idx, mean, 'r-', linewidth=2, label='Прогноз')
-    
-    ax.axvline(x=forecast_start, color='gray', linestyle='--', alpha=0.5)
-    ax.legend()
-    ax.set_title(title or 'Chronos Bolt: прогноз')
-    ax.set_xlabel('Время')
-    ax.set_ylabel('Значение')
-    
-    plt.tight_layout()
-    plt.show()
-```
+👎 **Проблемы:**
+➖ **Потеря точности при квантизации** — discretization error
+➖ **Чувствительность к выбросам** — влияют на scaling
+➖ **v1 медленный** — авторегрессионная генерация
+➖ **Bolt/v2: фиксированные квантили** — нельзя запросить произвольный
 
 ## Какую версию выбрать?
 
-|Сценарий|Рекомендация|
-|---|---|
-|Продакшн, нужна скорость|**Bolt**|
-|Длинный контекст (>512 точек)|**Bolt**|
-|Нужен произвольный квантиль (например, 0.95)|v1 (сэмплирование)|
-|Исследования, эксперименты с generation|v1|
-|CPU inference|**Bolt-tiny**|
-|Максимальное качество|**Bolt-base**|
-|Только начинаете с Chronos|**Bolt**|
-
-**Практический совет:** начинайте с Chronos Bolt. Переходите на v1 только если нужны специфичные возможности сэмплирования (temperature control, произвольные квантили, анализ распределения траекторий).
+| Сценарий | Рекомендация |
+|----------|--------------|
+| Есть ковариаты | **Chronos-2** |
+| Multivariate данные | **Chronos-2** |
+| Нужна скорость, univariate | **Chronos-Bolt** |
+| CPU inference | **Bolt-tiny** |
+| Произвольные квантили | v1 (сэмплирование) |
+| Только начинаете | **Chronos-2** |
 
 ## Chronos vs другие модели
 
-|Критерий|Chronos Bolt|Chronos v1|[TiRex](https://arxiv.org/abs/2402.02868)|[FlowState](https://arxiv.org/abs/2403.08280)|
-|---|---|---|---|---|
-|Скорость|Быстро|Медленно|Средне|Быстро|
-|Контекст|2048|512|2048+|2048+|
-|Вероятностный выход|Квантили|Сэмплы|Квантили|Квантили|
-|Параметры|9M–205M|8M–710M|35M|<10M|
-|CPU inference|✓ (tiny)|~ (медленно)|✗|~|
-|Произвольные квантили|✗|✓|✗|✗|
+| Критерий | Chronos-2 | Chronos-Bolt | Chronos v1 | TiRex | FlowState |
+|----------|-----------|--------------|------------|-------|-----------|
+| Архитектура | T5 encoder | T5 enc-dec | T5 enc-dec | sLSTM | SSM+FBD |
+| Параметры | 120M | 9M–205M | 8M–710M | 35M | 9.1M |
+| Multivariate | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Covariates | ✓ | ✗* | ✗ | ✗ | ✗ |
+| Скорость | Быстро | Очень быстро | Медленно | Средне | Быстро |
+| GIFT-Eval | SOTA | Top-5 | Top-10 | #1 | #2 |
+
+*Bolt можно комбинировать с external covariate regressors через AutoGluon
+
+## Реализации
+
+| Ресурс | Ссылка |
+|--------|--------|
+| Официальный код | [amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |
+| Chronos-2 | [amazon/chronos-2](https://huggingface.co/amazon/chronos-2) |
+| Chronos-Bolt | [amazon/chronos-bolt-base](https://huggingface.co/amazon/chronos-bolt-base) |
+| Chronos v1 | [amazon/chronos-t5-large](https://huggingface.co/amazon/chronos-t5-large) |
+| AutoGluon интеграция | [AutoGluon-TimeSeries](https://auto.gluon.ai/stable/tutorials/timeseries/) |
+| AWS SageMaker | [JumpStart tutorial](https://github.com/amazon-science/chronos-forecasting/blob/main/notebooks/deploy-chronos-bolt-to-amazon-sagemaker.ipynb) |
 
 ## Что дальше
 
-Chronos показал, что идея «ряд как текст» работает, а Bolt доказал, что её можно сделать практичной для продакшена. Квантизация, трансформер, direct forecasting — это работающий пайплайн.
+Chronos показал, что идея «ряд как текст» работает. Квантизация + трансформер + cross-entropy loss — это работающий пайплайн, который масштабируется до multivariate и covariates.
 
-В следующем посте мы рассмотрим TimeGPT — закрытую модель от Nixtla, которая доступна только через API. Это другой подход к foundation models: вместо открытых весов — сервис с гарантированным качеством и простотой использования.
+В следующем посте мы рассмотрим TimeGPT — закрытую модель от Nixtla, доступную только через API. Это другой подход к foundation models: вместо открытых весов — сервис с гарантированным качеством.
 
 :::{seealso}
-**Источники и ссылки:**
-- Ansari, A.F., et al. (2024). [Chronos: Learning the Language of Time Series](https://arxiv.org/abs/2403.07815). TMLR 2024.
-- Ansari, A.F., et al. (2025). [Chronos-Bolt: Efficient and Accurate Foundation Models for Time Series Forecasting](https://arxiv.org/abs/2510.15821). arXiv.
+**Источники:**
+- Ansari, A.F., et al. (2024). [Chronos: Learning the Language of Time Series](https://arxiv.org/abs/2403.07815). Transactions on Machine Learning Research (TMLR)
+- Ansari, A.F., et al. (2025). [Chronos-2: From Univariate to Universal Forecasting](https://arxiv.org/abs/2510.15821). arXiv
 - [Официальный код Chronos](https://github.com/amazon-science/chronos-forecasting) — Amazon Science GitHub
-- [Amazon Science Blog: Chronos](https://www.amazon.science/blog/adapting-language-model-architectures-for-time-series-forecasting)
+- [AWS Blog: Chronos-Bolt](https://aws.amazon.com/blogs/machine-learning/fast-and-accurate-zero-shot-forecasting-with-chronos-bolt-and-autogluon/)
+- [Amazon Science Blog: Chronos-2](https://www.amazon.science/blog/introducing-chronos-2-from-univariate-to-universal-forecasting)
 :::

@@ -2,472 +2,198 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/32_timegpt.ipynb)
 
+TimeGPT ([статья](https://arxiv.org/abs/2310.03589), октябрь 2023) — foundation model от Nixtla, доступная исключительно через API. Это принципиально отличает её от всех моделей, которые мы рассматривали раньше: вы не скачиваете веса, не запускаете inference на своём железе — вместо этого отправляете данные на серверы Nixtla и получаете готовый прогноз[^timegpt-api]
+
+[^timegpt-api]: Nixtla Documentation. "TimeGPT is the first foundation model for time series, providing state-of-the-art forecasting and anomaly detection capabilities." https://www.nixtla.io/docs/introduction/introduction
+
 ## Nixtla: компания за TimeGPT
 
-Прежде чем говорить о TimeGPT, стоит познакомиться с Nixtla — компанией, которая его создала, потому что контекст здесь важен для понимания продукта. Nixtla — это стартап, основанный в 2021 году командой, которая глубоко погружена в проблематику прогнозирования временных рядов и которая уже успела заработать репутацию в open-source сообществе.
+Nixtla — не случайный стартап на хайпе foundation models, а команда с глубоким пониманием домена и проверенным track record в open-source[^nixtla-oss]:
 
-Если вы работали с временными рядами в Python за последние пару лет, вы почти наверняка сталкивались с библиотеками Nixtla, даже если не знали, кто за ними стоит. **[StatsForecast](https://nixtlaverse.nixtla.io/statsforecast/)** — это их коллекция молниеносных реализаций классических статистических методов, от ARIMA до Theta, которую мы использовали в этой книге для бейзлайнов. **[NeuralForecast](https://nixtlaverse.nixtla.io/neuralforecast/)** — библиотека нейросетевых моделей, включая N-BEATS, N-HiTS и PatchTST, на которой построено большинство примеров кода в наших постах. Есть ещё **[MLForecast](https://nixtlaverse.nixtla.io/mlforecast/)** для feature engineering под градиентный бустинг и **[HierarchicalForecast](https://nixtlaverse.nixtla.io/hierarchicalforecast/)** для согласования иерархических прогнозов.
+[^nixtla-oss]: GitHub: Nixtla. https://github.com/Nixtla
 
-Все эти инструменты бесплатны, открыты и активно развиваются — Nixtla вкладывает в них серьёзные ресурсы, и сообщество это ценит. TimeGPT представляет собой коммерческую сторону компании, их способ монетизировать накопленную экспертизу и превратить стартап в устойчивый бизнес. Это важно понимать: перед нами не случайный стартап, который решил запрыгнуть на хайп foundation models, а команда с глубоким пониманием домена, проверенным track record и репутацией, которую они не захотят терять.
+➖ **[StatsForecast](https://nixtlaverse.nixtla.io/statsforecast/)** — молниеносные реализации классических методов (ARIMA, ETS, Theta)
+➖ **[NeuralForecast](https://nixtlaverse.nixtla.io/neuralforecast/)** — нейросетевые модели (N-BEATS, N-HiTS, PatchTST)
+➖ **[MLForecast](https://nixtlaverse.nixtla.io/mlforecast/)** — feature engineering для gradient boosting
+➖ **[HierarchicalForecast](https://nixtlaverse.nixtla.io/hierarchicalforecast/)** — согласование иерархических прогнозов
 
-## Ключевая идея
+TimeGPT — коммерческая сторона компании. И теперь Nixtla предлагает доступ не только к своей модели, но и к другим ведущим foundation models (Chronos, TiRex и др.) через единый API[^nixtla-multimodel]
 
-TimeGPT — это foundation model для временных рядов, которая доступна исключительно через API, и в этом заключается её принципиальное отличие от всего, что мы рассматривали раньше. Вы не скачиваете веса модели, не запускаете inference на своём железе, не разбираетесь с CUDA-драйверами и версиями PyTorch — вместо этого вы отправляете свои данные на серверы Nixtla через HTTP-запрос и получаете готовый прогноз в ответ.
+[^nixtla-multimodel]: GitHub: Nixtla/nixtla. "NixtlaClient may be used to access services powered by technology from Google, Amazon, IBM, Datadog, and NXAI." https://github.com/Nixtla/nixtla
 
-Это совершенно другая философия построения ML-продуктов, и она заслуживает серьёзного обсуждения, потому что для одних сценариев такой подход идеален, а для других — категорически неприемлем. [Chronos](https://arxiv.org/abs/2403.07815), [Moirai](https://arxiv.org/abs/2402.02592), [TiRex](https://arxiv.org/abs/2402.02868), [FlowState](https://arxiv.org/abs/2403.08280) — все эти модели вы контролируете полностью: можете заглянуть внутрь, модифицировать, запускать офлайн, не платить за каждый вызов. TimeGPT — это сервис, где вы платите за удобство и делегируете всю сложность инфраструктуры команде Nixtla.
+## Семейство TimeGPT
 
-Модель была представлена в октябре 2023 года и позиционировалась как «первая foundation model для временных рядов», хотя это утверждение можно оспаривать — DeepAR и другие глобальные модели существовали и раньше, просто маркетинговый термин foundation models тогда ещё не вошёл в обиход. Тем не менее, TimeGPT действительно был одним из первых продуктов, который предложил zero-shot прогнозирование временных рядов через простой API с минимальным порогом входа.
+Nixtla развивает несколько поколений модели[^timegpt-versions]:
 
-## Что известно об архитектуре
+[^timegpt-versions]: Nixtla Blog. "TimeGPT 2: Next Generation Time Series Model." https://www.nixtla.io/blog/timegpt-2-announcement
 
-Nixtla сознательно не раскрывает детали архитектуры TimeGPT, и это часть их бизнес-стратегии — защита интеллектуальной собственности позволяет итерировать модель без необходимости поддерживать обратную совместимость или отвечать на вопросы о каждом архитектурном решении. Тем не менее, из публикаций, блог-постов и документации можно собрать общую картину того, как модель устроена.
+🔢 **TimeGPT-1** (октябрь 2023)
+➖ Первый релиз, encoder-decoder transformer
+➖ Обучен на 100+ миллиардах точек данных[^timegpt-data]
+➖ Zero-shot inference
 
-### Encoder-Decoder Transformer
+[^timegpt-data]: Garza, A., et al. "TimeGPT-1." arXiv:2310.03589. https://arxiv.org/abs/2310.03589
 
-TimeGPT использует архитектуру encoder-decoder трансформера, концептуально похожую на оригинальный Transformer из статьи [«Attention Is All You Need»](https://arxiv.org/abs/1706.03762). Encoder обрабатывает историческое окно временного ряда и строит контекстуализированное представление, которое затем используется decoder'ом для генерации прогноза.
+🔢 **TimeGPT-2** (2025, private preview)
+Модульное семейство с тремя вариантами[^timegpt2]:
+➖ **timegpt-2-mini** — быстрый inference, resource-constrained environments
+➖ **timegpt-2** — баланс между compute cost и accuracy
+➖ **timegpt-2-pro** — максимальная точность для short и long horizons
 
-В общем виде encoder трансформирует входную последовательность $\mathbf{x} = (x_1, x_2, ..., x_T)$ в последовательность скрытых представлений:
+[^timegpt2]: Nixtla Blog. "TimeGPT-2: Next Generation Time Series Model." https://www.nixtla.io/blog/timegpt-2-announcement
 
-$$\mathbf{H}^{(l)} = \text{TransformerBlock}(\mathbf{H}^{(l-1)})$$
+Ключевые улучшения TimeGPT-2:
+➖ До **60% улучшения точности** vs TimeGPT-1
+➖ Privacy-first approach
+➖ Self-hosted и on-premises deployments
 
-где каждый блок включает multi-head self-attention и feed-forward подсеть:
+🔢 **TimeGPT 2.1** (2025, private preview)
+Первая **multivariate** модель в семействе TimeGPT[^timegpt21]:
+➖ Поддержка exogenous variables
+➖ Cross-learned forecasts
+➖ Self-hosted deployments
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) V$$
+[^timegpt21]: Nixtla Blog. "TimeGPT 2.1: Next-Gen Time Series Forecasting." https://www.nixtla.io/blog/timegpt-2-1-announcement
 
-Decoder генерирует прогноз, используя cross-attention на выход encoder'а — каждая позиция в прогнозе может «смотреть» на всю закодированную историю и выбирать релевантную информацию.
+🔢 **TimeGEN-1** (Azure)
+Версия TimeGPT, оптимизированная для Azure AI[^timegen]:
+➖ Model-as-a-Service через Azure AI Model Catalog
+➖ Первый cloud provider с foundation model для временных рядов
+➖ Microsoft Build 2024
 
-Конкретные детали — количество слоёв, размерность эмбеддингов, число голов внимания, способ позиционного кодирования — Nixtla не раскрывает, поэтому мы не можем судить о том, насколько архитектура отличается от стандартных решений.
+[^timegen]: Microsoft Tech Community. "Announcing TimeGEN-1 in Azure AI." June 2024. https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/announcing-timegen-1-in-azure-ai-leap-forward-in-time-series-forecasting/4140446
 
-### Conformal Prediction для интервалов неопределённости
+## Архитектура
 
-Одна из интересных особенностей TimeGPT — использование conformal prediction для построения доверительных интервалов, и эту часть Nixtla описывает достаточно подробно, потому что conformal prediction — это устоявшийся статистический метод с теоретическими гарантиями.
+TimeGPT использует encoder-decoder трансформер, концептуально похожий на оригинальный [«Attention Is All You Need»](https://arxiv.org/abs/1706.03762)[^timegpt-arch]:
 
-Идея conformal prediction проста и элегантна: вместо того чтобы предполагать конкретное распределение ошибок (нормальное, Student-t), мы используем эмпирическое распределение ошибок на калибровочной выборке.
+[^timegpt-arch]: Garza, A., et al. "TimeGPT-1." arXiv:2310.03589. Section 3: "TimeGPT is a Transformer-based time series model with self-attention mechanisms." https://arxiv.org/abs/2310.03589
 
-Процесс выглядит так. Сначала мы делаем прогнозы на калибровочном наборе — данных, которые модель не видела при обучении — и собираем ошибки:
-
-$$r_i = |y_i - \hat{y}_i|$$
-
-где $y_i$ — истинное значение, $\hat{y}_i$ — прогноз модели.
-
-Затем для нового прогноза мы строим интервал, используя квантиль распределения ошибок. Для уровня доверия $(1 - \alpha)$ интервал имеет вид:
-
-$$[\hat{y} - q_{1-\alpha}, \hat{y} + q_{1-\alpha}]$$
-
-где $q_{1-\alpha}$ — $(1-\alpha)$-квантиль эмпирического распределения ошибок $\{r_1, r_2, ..., r_n\}$.
-
-Красота conformal prediction в том, что он даёт теоретическую гарантию: если данные exchangeable (грубо говоря, будущее статистически похоже на прошлое), то интервал покроет истинное значение с вероятностью не меньше $(1-\alpha)$. Это сильнее, чем эвристические интервалы многих других моделей.
-
-На практике TimeGPT, вероятно, использует адаптивные версии conformal prediction, которые учитывают, что ошибки могут зависеть от уровня ряда, горизонта прогноза и других факторов, но детали реализации не раскрываются.
-
-### Данные обучения
-
-Nixtla сообщает, что TimeGPT обучен на «более чем 100 миллиардах точек данных» из разнообразных источников — финансы, энергетика, ритейл, погода, веб-трафик. Конкретные датасеты не называются, что типично для коммерческих моделей, но нетипично для академических публикаций и open-source проектов.
-
-Это создаёт определённую асимметрию информации: вы не можете проверить, не пересекаются ли обучающие данные TimeGPT с вашими тестовыми данными, что важно для честной оценки качества. С другой стороны, большинство пользователей работают с собственными, уникальными данными, где проблема leakage не возникает.
-
-## API-first подход: когда это имеет смысл
-
-Решение сделать TimeGPT доступным только через API — это не техническое ограничение, а осознанный продуктовый выбор, и у него есть веские основания, которые стоит разобрать подробно.
-
-### Преимущества для пользователя
-
-**Нулевая инфраструктура** — это, пожалуй, главный аргумент в пользу API-подхода. Вам не нужен GPU, не нужно настраивать окружение, не нужно разбираться с конфликтами версий PyTorch и CUDA, не нужно следить за памятью при inference. Если у вас нет ML-инфраструктуры и нет желания её строить, TimeGPT позволяет получить прогнозы state-of-the-art качества без капитальных вложений.
-
-**Простота интеграции** снижает time-to-value до минимума. Несколько строк кода на Python — и у вас работающий прогноз, который можно показать бизнесу, встроить в дашборд, использовать для принятия решений. Для команд без глубокой ML-экспертизы это может быть разницей между «сделали за день» и «сделали за месяц».
-
-**Автоматические улучшения** означают, что когда Nixtla выпускает новую версию модели с лучшим качеством, вы получаете это улучшение автоматически, без необходимости что-то делать со своей стороны. Это контрастирует с open-source моделями, где обновление требует скачивания новых весов, проверки совместимости, возможно — изменения кода.
-
-**Масштабируемость** перестаёт быть вашей проблемой. Серверы Nixtla справляются с нагрузкой, вам не нужно думать о batching, очередях, автоскейлинге. Если завтра вам понадобится в 10 раз больше прогнозов — вы просто платите в 10 раз больше, без изменений в инфраструктуре.
-
-**Fine-tuning через API** — особенно ценная возможность, потому что дообучение нейросетей требует GPU и экспертизы, которых может не быть. TimeGPT позволяет адаптировать модель к вашему домену через пару дополнительных параметров в API-запросе.
-
-### Цена, которую вы платите
-
-**Зависимость от внешнего сервиса** — это риск, который нельзя игнорировать. Если серверы Nixtla недоступны из-за технических проблем, DDoS-атаки или бизнес-причин (компания закрылась, изменила условия), ваша система прогнозирования перестаёт работать. Для критичных бизнес-процессов это может быть неприемлемо.
-
-**Конфиденциальность данных** — вторая серьёзная проблема. Ваши временные ряды отправляются на серверы Nixtla, где они обрабатываются и, возможно, логируются. Для многих организаций — финансовых институтов, медицинских компаний, любого бизнеса с строгими требованиями compliance — передача данных третьей стороне может быть запрещена политиками или регуляторами.
-
-**Стоимость в долгосрочной перспективе** может оказаться выше, чем кажется на первый взгляд. Для прототипа или небольшого проекта API дешевле собственной инфраструктуры, но при масштабировании ситуация меняется. GPU-инстанс, который вы арендуете, имеет фиксированную стоимость независимо от количества прогнозов; API берёт плату за каждый вызов.
-
-**Отсутствие контроля и прозрачности** означает, что вы не можете заглянуть внутрь модели, понять, почему она выдала конкретный прогноз, модифицировать её поведение. Для исследовательских задач, для случаев, когда нужно объяснить прогноз регулятору или аудитору, это серьёзное ограничение.
-
-**Латентность сетевого вызова** добавляет накладные расходы, которые могут быть критичны для real-time сценариев. Даже при быстром интернете round-trip до серверов Nixtla — это десятки-сотни миллисекунд, что может не вписываться в требования систем с жёсткими SLA.
-
-## Код: TimeGPT
-
-Несмотря на закрытость модели, работа с TimeGPT через Python SDK максимально простая, и это одна из сильных сторон продукта — Nixtla вложила много усилий в developer experience.
-
-### Установка и настройка
-
-python
-
-```python
-# Установка
-# pip install nixtla
-
-from nixtla import NixtlaClient
-import pandas as pd
-import numpy as np
-
-# API ключ можно получить на https://dashboard.nixtla.io/
-# Для экспериментов есть бесплатный tier
-client = NixtlaClient(api_key='YOUR_API_KEY')
-
-# Проверка, что всё работает
-client.validate_api_key()
+```
+Input: историческое окно временного ряда
+    ↓
+Local positional encoding
+    ↓
+Encoder:
+  - Multiple layers
+  - Self-attention
+  - Residual connections
+  - Layer normalization
+    ↓
+Decoder:
+  - Cross-attention на encoder output
+  - Residual connections
+  - Layer normalization
+    ↓
+Linear layer → forecasting window
 ```
 
-### Базовый прогноз
-
-python
-
-```python
-# TimeGPT ожидает данные в формате, который мы использовали на протяжении всей книги:
-# unique_id — идентификатор ряда
-# ds — временная метка
-# y — значение
-
-# Создадим синтетический ряд с трендом и сезонностью для демонстрации
-np.random.seed(42)
-dates = pd.date_range('2023-01-01', periods=365, freq='D')
-trend = np.linspace(100, 150, 365)
-seasonality = 20 * np.sin(np.arange(365) / 7 * 2 * np.pi)  # недельная сезонность
-noise = np.random.normal(0, 5, 365)
-
-df = pd.DataFrame({
-    'unique_id': 'product_sales',
-    'ds': dates,
-    'y': trend + seasonality + noise
-})
-
-# Прогноз — одна строка кода
-forecast = client.forecast(
-    df=df,
-    h=30,  # горизонт: 30 дней вперёд
-    level=[80, 95],  # уровни доверительных интервалов
-)
-
-# Результат содержит точечный прогноз и интервалы
-print(forecast.columns.tolist())
-# ['unique_id', 'ds', 'TimeGPT', 'TimeGPT-lo-80', 'TimeGPT-hi-80', 
-#  'TimeGPT-lo-95', 'TimeGPT-hi-95']
-```
-
-### Множество рядов за один вызов
-
-Одно из преимуществ TimeGPT — эффективная обработка множества рядов, что важно для реальных бизнес-сценариев, где у вас сотни или тысячи SKU, магазинов, метрик.
-
-python
-
-```python
-# Создаём датасет с несколькими рядами разного характера
-np.random.seed(42)
-dates = pd.date_range('2023-01-01', periods=180, freq='D')
-
-series_data = []
-
-# Ряд с растущим трендом
-for i, d in enumerate(dates):
-    series_data.append({
-        'unique_id': 'growing_product',
-        'ds': d,
-        'y': 100 + i * 0.5 + np.random.normal(0, 5)
-    })
-
-# Ряд с сильной сезонностью
-for i, d in enumerate(dates):
-    series_data.append({
-        'unique_id': 'seasonal_product',
-        'ds': d,
-        'y': 200 + 50 * np.sin(i / 7 * 2 * np.pi) + np.random.normal(0, 10)
-    })
-
-# Стабильный ряд
-for i, d in enumerate(dates):
-    series_data.append({
-        'unique_id': 'stable_product',
-        'ds': d,
-        'y': 150 + np.random.normal(0, 8)
-    })
-
-df_multi = pd.DataFrame(series_data)
-
-# TimeGPT обрабатывает все ряды за один API-вызов,
-# что эффективнее, чем отдельные запросы для каждого ряда
-forecast_multi = client.forecast(
-    df=df_multi,
-    h=14,
-    level=[90],
-)
-
-# Проверяем, что получили прогнозы для всех рядов
-print(f"Уникальных рядов в прогнозе: {forecast_multi['unique_id'].nunique()}")
-for uid in forecast_multi['unique_id'].unique():
-    n_points = len(forecast_multi[forecast_multi['unique_id'] == uid])
-    print(f"  {uid}: {n_points} точек")
-```
-
-### Экзогенные переменные
-
-В отличие от многих open-source foundation models, TimeGPT умеет использовать внешние признаки — ковариаты, которые могут влиять на прогнозируемую величину. Это важно для бизнес-сценариев, где продажи зависят от промо-активностей, погода влияет на спрос, праздники меняют паттерны потребления.
-
-python
-
-```python
-# Добавляем ковариаты к историческим данным
-df_with_features = df.copy()
-df_with_features['day_of_week'] = df_with_features['ds'].dt.dayofweek
-df_with_features['is_weekend'] = (df_with_features['day_of_week'] >= 5).astype(int)
-df_with_features['month'] = df_with_features['ds'].dt.month
-
-# Критически важно: ковариаты должны быть известны на горизонте прогноза!
-# Для дня недели и месяца это очевидно, для промо — нужен план промо-активностей
-future_dates = pd.date_range(
-    df['ds'].max() + pd.Timedelta(days=1),
-    periods=30,
-    freq='D'
-)
-
-future_df = pd.DataFrame({
-    'unique_id': 'product_sales',
-    'ds': future_dates,
-    'day_of_week': future_dates.dayofweek,
-    'is_weekend': (future_dates.dayofweek >= 5).astype(int),
-    'month': future_dates.month,
-})
-
-# Прогноз с учётом ковариат
-forecast_with_features = client.forecast(
-    df=df_with_features,
-    X_df=future_df,  # будущие значения ковариат
-    h=30,
-    level=[90],
-)
-```
-
-### Fine-tuning: адаптация к вашему домену
-
-Если zero-shot качество недостаточно, TimeGPT позволяет дообучить модель на ваших данных прямо через API, без необходимости поднимать инфраструктуру для обучения.
-
-python
-
-```python
-# Fine-tuning добавляет несколько шагов градиентного спуска
-# на ваших данных поверх предобученных весов
-forecast_finetuned = client.forecast(
-    df=df,
-    h=30,
-    finetune_steps=50,  # количество шагов дообучения
-    finetune_loss='mae',  # можно выбрать mae, mse, rmse, mape, smape
-    level=[90],
-)
-
-# Fine-tuning особенно полезен, когда ваш домен
-# существенно отличается от данных предобучения
-```
-
-### Модели для разных сценариев
-
-TimeGPT предлагает несколько версий модели, оптимизированных для разных задач:
-
-python
-
-```python
-# Стандартная модель — хороша для большинства случаев
-forecast_standard = client.forecast(
-    df=df,
-    h=30,
-    model='timegpt-1',
-)
-
-# Модель для длинных горизонтов — когда нужен прогноз на месяцы вперёд
-forecast_long = client.forecast(
-    df=df,
-    h=90,
-    model='timegpt-1-long-horizon',
-)
-```
-
-### Детекция аномалий
-
-Помимо прогнозирования, TimeGPT умеет находить аномалии во временных рядах — точки, которые статистически выбиваются из ожидаемого поведения.
-
-python
-
-```python
-# Добавим несколько аномалий в данные для демонстрации
-df_with_anomalies = df.copy()
-df_with_anomalies.loc[50, 'y'] = df_with_anomalies.loc[50, 'y'] + 100  # резкий скачок
-df_with_anomalies.loc[150, 'y'] = df_with_anomalies.loc[150, 'y'] - 80  # резкое падение
-
-# Детекция аномалий
-anomalies = client.detect_anomalies(
-    df=df_with_anomalies,
-    level=99,  # уровень для определения порога аномальности
-)
-
-# Результат содержит булеву колонку 'anomaly'
-print(f"Найдено аномалий: {anomalies['anomaly'].sum()}")
-anomaly_dates = anomalies[anomalies['anomaly']]['ds'].tolist()
-print(f"Даты аномалий: {anomaly_dates}")
-```
-
-### Кросс-валидация для оценки качества
-
-TimeGPT предоставляет встроенный метод для temporal cross-validation, что позволяет честно оценить качество прогнозов на ваших данных.
-
-python
-
-```python
-# Кросс-валидация с несколькими окнами
-cv_results = client.cross_validation(
-    df=df,
-    h=14,  # горизонт для каждого окна
-    n_windows=5,  # количество окон валидации
-    step_size=30,  # шаг между окнами
-    level=[90],
-)
-
-# cv_results содержит прогнозы и факты для каждого окна
-# Колонка 'cutoff' показывает дату разделения train/test
-
-# Считаем метрики по окнам
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-
-print("Качество по окнам кросс-валидации:")
-for cutoff in sorted(cv_results['cutoff'].unique()):
-    window_data = cv_results[cv_results['cutoff'] == cutoff]
-    mae = mean_absolute_error(window_data['y'], window_data['TimeGPT'])
-    rmse = np.sqrt(mean_squared_error(window_data['y'], window_data['TimeGPT']))
-    print(f"  {cutoff.date()}: MAE={mae:.2f}, RMSE={rmse:.2f}")
-
-# Общее качество
-overall_mae = mean_absolute_error(cv_results['y'], cv_results['TimeGPT'])
-print(f"\nОбщий MAE: {overall_mae:.2f}")
-```
-
-### Визуализация результатов
-
-Nixtla предоставляет встроенные методы визуализации, которые избавляют от необходимости писать boilerplate-код для matplotlib.
-
-python
-
-```python
-# Встроенная визуализация — история + прогноз + интервалы
-client.plot(
-    df=df,
-    forecasts_df=forecast,
-    max_insample_length=90,  # сколько исторических точек показывать
-    level=[80, 95],
-)
-
-# Для нескольких рядов
-client.plot(
-    df=df_multi,
-    forecasts_df=forecast_multi,
-    unique_ids=['growing_product', 'seasonal_product'],  # какие ряды показать
-    max_insample_length=60,
-)
-```
-
-### Обработка ошибок и надёжность
-
-При работе с внешним API важно предусмотреть обработку ошибок и retry-логику, потому что сетевые проблемы неизбежны.
-
-python
-
-```python
-import time
-from nixtla.errors import NixtlaError
-
-def robust_forecast(client, df, h, max_retries=3, **kwargs):
-    """
-    Обёртка для прогноза с повторными попытками при ошибках.
-    
-    Использует exponential backoff — каждая следующая попытка
-    ждёт дольше предыдущей, чтобы не перегружать сервер.
-    """
-    last_error = None
-    
-    for attempt in range(max_retries):
-        try:
-            return client.forecast(df=df, h=h, **kwargs)
-        
-        except NixtlaError as e:
-            last_error = e
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1, 2, 4 секунды
-                print(f"Попытка {attempt + 1} не удалась: {e}")
-                print(f"Повтор через {wait_time} секунд...")
-                time.sleep(wait_time)
-            else:
-                print(f"Все {max_retries} попыток исчерпаны")
-                raise last_error
-    
-    return None
-
-# Использование в продакшене
-try:
-    forecast = robust_forecast(client, df, h=14, level=[90])
-    print("Прогноз успешно получен")
-except NixtlaError as e:
-    print(f"Не удалось получить прогноз: {e}")
-    # Здесь можно переключиться на fallback-модель
-```
-
-## Стоимость и практические соображения
-
-На момент написания (начало 2025 года) Nixtla предлагает несколько тарифных планов, хотя конкретные цены лучше проверять на официальном сайте, потому что они могут меняться.
-
-**Free tier** даёт ограниченное количество вызовов в месяц — достаточно для экспериментов, прототипов и обучения. Это хороший способ попробовать TimeGPT без финансовых обязательств.
-
-**Платные планы** обычно тарифицируются по количеству прогнозируемых точек (временных шагов × рядов). Чем больше объём, тем ниже цена за точку. Для enterprise-клиентов доступны индивидуальные условия и SLA.
-
-При оценке стоимости важно сравнивать не только прямые расходы на API vs аренду GPU, но и косвенные: время разработчиков на настройку инфраструктуры, поддержку, мониторинг. Для небольшой команды без ML-инженера эти косвенные расходы могут легко превысить стоимость API.
+Конкретные детали (количество слоёв, размерность, число голов) Nixtla не раскрывает — это часть IP защиты[^timegpt-closed]
+
+[^timegpt-closed]: GitHub: Nixtla/nixtla. "TimeGPT is closed source. However, this SDK is open source and available under the Apache 2.0 License." https://github.com/Nixtla/nixtla
+
+## Conformal Prediction для интервалов
+
+TimeGPT использует **conformal prediction** для доверительных интервалов — метод с теоретическими гарантиями[^timegpt-conformal]:
+
+[^timegpt-conformal]: Nixtla Documentation. "Prediction intervals." https://docs.nixtla.io/
+
+🔢 **Как работает:**
+1. Делаем прогнозы на калибровочном наборе, собираем ошибки: $r_i = |y_i - \hat{y}_i|$
+2. Для уровня $(1-\alpha)$ интервал: $[\hat{y} - q_{1-\alpha}, \hat{y} + q_{1-\alpha}]$
+3. $q_{1-\alpha}$ — квантиль эмпирического распределения ошибок
+
+Гарантия: если данные exchangeable, интервал покроет истинное значение с вероятностью ≥ $(1-\alpha)$
+
+## Данные обучения
+
+TimeGPT обучен на **100+ миллиардах точек данных** из разнообразных источников[^timegpt-training]:
+➖ Финансы
+➖ Транспорт
+➖ Банки
+➖ Веб-трафик
+➖ Погода
+➖ Энергетика
+➖ Healthcare
+
+[^timegpt-training]: Liao, W., et al. "TimeGPT in Load Forecasting." 2024. "TimeGPT is trained on massive and diverse time series datasets consisting of 100 billion data points." https://arxiv.org/abs/2404.04885
+
+Конкретные датасеты не называются — типично для коммерческих моделей
+
+## Что умеет
+
+➖ **Zero-shot inference** — прогнозы без обучения на ваших данных[^timegpt-zeroshot]
+➖ **Fine-tuning через API** — адаптация к вашему домену
+➖ **Exogenous variables** — внешние факторы
+➖ **Anomaly detection** — обнаружение аномалий
+➖ **Multiple series** — одновременный прогноз нескольких рядов
+➖ **Multivariate** (TimeGPT 2.1) — cross-learned forecasts
+➖ **Custom loss functions** — выбор функции потерь при fine-tuning
+
+[^timegpt-zeroshot]: Nixtla About. "TimeGPT's zero-shot inference capabilities outperform existing approaches." https://nixtlaverse.nixtla.io/nixtla/docs/getting-started/introduction.html
+
+## Когда использовать
+
+👍 **Хорошо работает:**
+➖ Нет ML-инфраструктуры и нет желания её строить
+➖ Нужен быстрый результат — прототип за день
+➖ В команде нет глубокой ML-экспертизы
+➖ Умеренные объёмы (тысячи, не миллионы рядов)
+➖ Данные не конфиденциальны
+➖ Важна поддержка ковариат из коробки
+
+👎 **Проблемы:**
+➖ **Данные конфиденциальны** — уходят на серверы Nixtla (кроме self-hosted TimeGPT-2)
+➖ **Нужен офлайн-режим** — зависимость от внешнего сервиса
+➖ **Большие объёмы** — стоимость масштабируется
+➖ **Критична латентность <100ms** — сетевой round-trip
+➖ **Нужен полный контроль** — модель закрыта
 
 ## TimeGPT vs открытые модели
 
-|Критерий|TimeGPT|[Chronos Bolt](https://arxiv.org/abs/2403.07815)|[TiRex](https://arxiv.org/abs/2402.02868)|[Moirai](https://arxiv.org/abs/2402.02592)|
-|---|---|---|---|---|
-|Доступ|Только API|Открытые веса|Открытые веса|Открытые веса|
-|Инфраструктура|Не нужна|Нужна (GPU желателен)|Нужна (GPU)|Нужна (GPU)|
-|Контроль над моделью|Минимальный|Полный|Полный|Полный|
-|Приватность данных|Данные уходят наружу|Полная|Полная|Полная|
-|Ковариаты|✓ Поддерживает|✗|✗|~ Ограниченно|
-|Fine-tuning|✓ Через API|✗ (только inference)|По запросу|✓|
-|Офлайн-режим|✗|✓|✓|✓|
-|Латентность|Сеть + compute|Только compute|Только compute|Только compute|
+| Критерий | TimeGPT | Chronos-2 | TiRex | Moirai |
+|----------|---------|-----------|-------|--------|
+| Доступ | Только API* | Открытые веса | Открытые веса | Открытые веса |
+| Инфраструктура | Не нужна | Нужна | Нужна (GPU) | Нужна (GPU) |
+| Контроль | Минимальный | Полный | Полный | Полный |
+| Приватность | Данные уходят* | Полная | Полная | Полная |
+| Ковариаты | ✓ | ✓ | ✗ | ~ |
+| Multivariate | ✓ (2.1) | ✓ | ✗ | ✓ |
+| Fine-tuning | ✓ API | ✗ | По запросу | ✓ |
+| Офлайн | ✗* | ✓ | ✓ | ✓ |
 
-## Когда выбирать TimeGPT
+*TimeGPT-2 поддерживает self-hosted deployments
 
-**Идеально подходит, если:**
+## Реализации
 
-- У вас нет ML-инфраструктуры и нет желания её строить
-- Нужен быстрый результат — прототип за день, не за месяц
-- В команде нет глубокой ML-экспертизы
-- Объёмы прогнозирования умеренные (тысячи, не миллионы рядов)
-- Данные не конфиденциальны или допускают передачу третьей стороне
-- Важна поддержка ковариат из коробки
+| Ресурс | Ссылка |
+|--------|--------|
+| Python SDK | [github.com/Nixtla/nixtla](https://github.com/Nixtla/nixtla) |
+| R SDK | [nixtlar](https://nixtla.github.io/nixtlar/) |
+| Документация | [docs.nixtla.io](https://docs.nixtla.io/) |
+| Dashboard (API keys) | [dashboard.nixtla.io](https://dashboard.nixtla.io/) |
+| Azure AI (TimeGEN-1) | [Azure AI Model Catalog](https://ai.azure.com/) |
 
-**Лучше рассмотреть альтернативы, если:**
+## Стоимость
 
-- Данные конфиденциальны и не могут покидать ваш периметр
-- Нужен офлайн-режим или работа на edge-устройствах
-- Объёмы прогнозирования очень большие (миллионы рядов, real-time)
-- Критична минимальная латентность (<100ms)
-- Нужен полный контроль над моделью для исследований или compliance
-- Бюджет ограничен, а объёмы растут
+➖ **Free tier** — ограниченное количество вызовов для экспериментов
+➖ **Платные планы** — по количеству прогнозируемых точек
+➖ **Enterprise** — индивидуальные условия, SLA, self-hosted
+
+При оценке важно учитывать не только прямые расходы, но и косвенные: время разработчиков на настройку инфраструктуры может превысить стоимость API
 
 ## Что дальше
 
-TimeGPT демонстрирует, что foundation models для временных рядов могут существовать в форме сервиса, а не только в форме открытого софта, и для определённых сценариев это правильный trade-off — вы отдаёте контроль и приватность в обмен на простоту и скорость выхода на рынок.
+TimeGPT демонстрирует, что foundation models могут существовать в форме сервиса — вы отдаёте контроль и (частично) приватность в обмен на простоту и скорость выхода на рынок. TimeGPT-2 с self-hosted deployments размывает эту границу.
 
-В следующем посте мы вернёмся к открытым моделям и рассмотрим TimesFM от Google — foundation model с 200 миллионами параметров, обученную на смеси Google Trends, публичных датасетов и синтетических данных. TimesFM интересен как пример того, как одна из крупнейших технологических компаний мира подходит к созданию foundation models для временных рядов, и какие архитектурные решения она при этом принимает.
+В следующем посте мы рассмотрим TimesFM от Google — открытую foundation model с 200M параметрами, обученную на Google Trends, публичных датасетах и синтетических данных.
 
 :::{seealso}
-**Источники и ссылки:**
-- Garza, A., et al. (2023). [TimeGPT-1](https://arxiv.org/abs/2310.03589). arXiv.
+**Источники:**
+- Garza, A., Challu, C., Mergenthaler-Canseco, M. (2023). [TimeGPT-1](https://arxiv.org/abs/2310.03589). arXiv
 - [Nixtla TimeGPT Documentation](https://docs.nixtla.io/)
 - [Nixtla GitHub](https://github.com/Nixtla/nixtla)
+- [TimeGPT-2 Announcement](https://www.nixtla.io/blog/timegpt-2-announcement)
+- [TimeGPT 2.1 Announcement](https://www.nixtla.io/blog/timegpt-2-1-announcement)
+- [TimeGEN-1 in Azure AI](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/announcing-timegen-1-in-azure-ai-leap-forward-in-time-series-forecasting/4140446)
 :::

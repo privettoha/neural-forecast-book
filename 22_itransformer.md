@@ -2,339 +2,162 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/22_itransformer.ipynb)
 
-## Ключевая идея
+iTransformer ([статья](https://arxiv.org/abs/2310.06625), ICLR 2024 Spotlight) задаёт провокационный вопрос: а что если мы неправильно применяли трансформеры к временным рядам всё это время? Традиционный подход — attention вдоль оси времени, [PatchTST](https://arxiv.org/abs/2211.14730) улучшил это через патчинг, но iTransformer делает радикальный шаг: переворачивает оси местами и применяет attention вдоль оси переменных (каналов), а не времени[^itrans-core]
 
-iTransformer задаёт простой вопрос: а что если мы неправильно применяли трансформеры к временным рядам всё это время? Традиционный подход — применять attention вдоль оси времени, позволяя каждому моменту «смотреть» на другие моменты. PatchTST улучшил это через группировку точек в патчи. Но iTransformer делает более радикальный шаг: он переворачивает оси местами и применяет attention вдоль оси переменных (каналов), а не вдоль оси времени.
+[^itrans-core]: Liu, Y., et al. "iTransformer: Inverted Transformers Are Effective for Time Series Forecasting." ICLR 2024 Spotlight. Section 3, Figure 2. https://arxiv.org/abs/2310.06625
 
-Название расшифровывается как Inverted Transformer — инвертированный трансформер. Инверсия здесь не метафора: модель буквально транспонирует входные данные[^itrans-inversion], превращая каждую переменную (канал) в токен, а временные точки — в признаки этого токена.
+## Идея
 
-[^itrans-inversion]: Liu, Y., et al. "iTransformer: Inverted Transformers Are Effective for Time Series Forecasting." ICLR 2024. Section 3.1, Figure 2. https://arxiv.org/abs/2310.06625
+Ключевой момент отличия от традиционных трансформеров — **инверсия измерений**
 
-Результат парадоксален: модель, которая «не смотрит» на временные зависимости через attention, показывает state-of-the-art результаты на многомерных бенчмарках[^itrans-sota].
+Название расшифровывается как Inverted Transformer, и инверсия здесь не метафора: модель буквально транспонирует входные данные, превращая каждую переменную (канал) в токен, а временные точки — в признаки этого токена[^itrans-transpose]. Авторы формулируют разделение обязанностей так: **attention для межканальных корреляций, FFN для временных представлений**[^itrans-responsibilities]
 
-[^itrans-sota]: Liu, Y., et al. "iTransformer." ICLR 2024. Table 1, Table 2. https://arxiv.org/abs/2310.06625 Это заставляет переосмыслить, что именно трансформеры делают хорошо и где их сила на самом деле.
+[^itrans-transpose]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 3.1: "We embed the whole time series of each variate independently into a (variate) token." https://arxiv.org/abs/2310.06625
+
+[^itrans-responsibilities]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 3.2: "The attention mechanism captures multivariate correlations; meanwhile, the feed-forward network is applied for each variate token to learn nonlinear representations." https://arxiv.org/abs/2310.06625
+
+Результат парадоксален: модель, которая «не смотрит» на временные зависимости через attention, достигает SOTA на 7 реальных многомерных бенчмарках[^itrans-sota]
+
+[^itrans-sota]: Liu, Y., et al. "iTransformer." ICLR 2024. Table 1, Table 2. https://arxiv.org/abs/2310.06625
 
 ## Проблема традиционного подхода
 
-В стандартном трансформере для временных рядов входная матрица имеет размер $(T, C)$ — время × каналы. Каждый временной шаг становится токеном размерности CC C, и self-attention вычисляется между токенами, то есть между моментами времени.
+В стандартном трансформере входная матрица $(T, C)$ — время × каналы, каждый временной шаг становится токеном. Авторы идентифицируют три проблемы[^itrans-problems]:
 
-Это порождает несколько проблем, которые мы уже обсуждали в обзорном посте.
+[^itrans-problems]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 2. https://arxiv.org/abs/2310.06625
 
-**Бессмысленность точечного сравнения.** Attention сравнивает токены через dot product их представлений. Но что значит «похожесть» двух моментов времени? Если в понедельник и четверг значения всех переменных случайно совпали, это не означает, что эти дни как-то связаны. Похожесть значений ≠ похожесть контекста.
+➖ **Бессмысленность точечного сравнения**: attention сравнивает токены через dot product, но похожесть значений в понедельник и четверг не означает связь между этими днями. [DLinear](https://arxiv.org/abs/2205.13504) показал, что линейная модель конкурирует с трансформерами именно потому, что те тратят мощность на бессмысленные зависимости[^dlinear-critique]
 
-**Квадратичная сложность по времени.** Матрица внимания имеет размер $T \times T$. Для длинных рядов (тысячи точек) это становится узким местом. [PatchTST](https://arxiv.org/abs/2211.14730) решает эту проблему через патчинг, но iTransformer предлагает альтернативу.
+[^dlinear-critique]: Zeng, A., et al. "Are Transformers Effective for Time Series Forecasting?" AAAI 2023. Section 4.2. https://arxiv.org/abs/2205.13504
 
-**Потеря индивидуальности переменных.** Когда все переменные в момент $t$ сливаются в один токен, модели сложно выучить, что переменные ведут себя по-разному. Температура и влажность имеют разную динамику, разные автокорреляции, разные сезонности — но в традиционном подходе они смешиваются на входе.
+➖ **Квадратичная сложность**: матрица внимания $T \times T$ становится узким местом для длинных рядов
 
-## Инверсия: переменные как токены
+➖ **Потеря индивидуальности переменных**: когда все переменные сливаются в один токен, модели сложно выучить, что температура и влажность ведут себя по-разному[^itrans-variate-problem]
 
-iTransformer переворачивает логику. Вместо того чтобы делать токены из временных шагов, он делает токены из переменных. Входная матрица $(T, C)$ транспонируется в $(C, T)$, и теперь каждая строка — это полная история одной переменной.
+[^itrans-variate-problem]: Liu, Y., et al. "iTransformer." ICLR 2024. Abstract: "The embedding for each temporal token fuses multiple variates that represent potential delayed events and distinct physical measurements." https://arxiv.org/abs/2310.06625
 
-Каждая переменная становится токеном с «признаками» — её историческими значениями. Self-attention вычисляется между переменными, моделируя их взаимозависимости: как температура связана с влажностью, как продажи категории A зависят от продаж категории B.
+## Архитектура
 
-Временные зависимости внутри каждой переменной обрабатываются не attention'ом, а feed-forward слоями, которые применяются к каждому токену (переменной) независимо.
+Модель состоит из стандартного Transformer Encoder, но с инвертированными входами:
 
-## Архитектура в деталях
+🔢 **Transpose и Variate Embedding**
+Входная матрица $(T, C)$ транспонируется в $(C, T)$. Каждая переменная $\mathbf{x}_i \in \mathbb{R}^T$ проецируется в токен размерности $D$:
+$$\mathbf{h}_i^{(0)} = W_e \cdot \mathbf{x}_i + b_e$$
+где $W_e \in \mathbb{R}^{D \times T}$. Это «экстремальный случай патчинга», где один патч покрывает всю историю[^itrans-extreme-patch]. Нет позиционного кодирования по времени — вся временная информация упакована в эмбеддинг
 
-### Embedding: от ряда к токену
+[^itrans-extreme-patch]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 3.1: "the extreme case of Patching that enlarges local receptive field." https://arxiv.org/abs/2310.06625
 
-Для каждой переменной $i$ её история $x_i \in \mathbb{R}^T$ проецируется в пространство размерности $D$:
-
-$$h_i^{(0)} = \text{Embedding}(x_i) = W_e \cdot x_i + b_e$$
-
-где $W_e \in \mathbb{R}^{D \times T}$ — матрица проекции. Это линейное преобразование, которое сжимает $T$ временных точек в $D$-мерное представление.
-
-Важно: здесь нет патчинга, нет позиционного кодирования по времени. Вся временная информация «упаковывается» в вектор эмбеддинга через линейную проекцию.
-
-### Transformer Encoder с инвертированным attention
-
-После эмбеддинга у нас есть $C$ токенов размерности $D$. К ним применяется стандартный transformer encoder, но теперь attention работает между переменными:
-
+🔢 **Self-Attention между переменными**
+Теперь $C$ токенов размерности $D$, и attention работает между переменными:
 $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) V$$
+Матрица внимания $C \times C$ — количество переменных, не временных шагов. Если 100 переменных и 1000 точек: $10{,}000$ весов вместо $1{,}000{,}000$
 
-где $Q$, $K$, $V$ — проекции токенов переменных. Матрица внимания имеет размер $C \times C$ — количество переменных, а не временных шагов.
+🔢 **Feed-Forward для временных представлений**
+FFN применяется к каждому токену независимо — это единственное место обработки временной информации. Авторы используют стандартный Transformer[^attention-orig] без модификаций
 
-Feed-forward network применяется к каждому токену (переменной) независимо:
+[^attention-orig]: Vaswani, A., et al. "Attention Is All You Need." NeurIPS 2017. https://arxiv.org/abs/1706.03762
 
-$$\text{FFN}(h) = W_2 \cdot \text{GELU}(W_1 \cdot h + b_1) + b_2$$
+🔢 **Layer Normalization**
+Особая роль: уменьшает расхождения от несогласованных единиц измерения между переменными[^itrans-layernorm]
 
-Эти FFN-слои — единственное место, где происходит «обработка» временной информации. Они преобразуют $D$-мерное представление истории переменной, потенциально выучивая временные паттерны, но без явного механизма attention по времени.
+[^itrans-layernorm]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 3.2. https://arxiv.org/abs/2310.06625
 
-### Projection: от токена к прогнозу
-
-После $L$ слоёв encoder'а каждый токен (переменная) проецируется в прогноз:
-
-$$\hat{y}_i = W_p \cdot h_i^{(L)} + b_p$$
-
-где $W_p \in \mathbb{R}^{H \times D}$ — матрица проекции в горизонт $H$.
-
-Полная архитектура:
+🔢 **Projection**
+Каждый токен проецируется в прогноз: $\hat{\mathbf{y}}_i = W_p \cdot \mathbf{h}_i^{(L)} + b_p$, где $W_p \in \mathbb{R}^{H \times D}$
 
 ```
 Input: X ∈ ℝ^(T×C)
     ↓
 Transpose → X^T ∈ ℝ^(C×T)
     ↓
-Variate Embedding: каждая переменная → токен ∈ ℝ^D
+Variate Embedding → C токенов ∈ ℝ^D
     ↓
 Transformer Encoder (L слоёв):
   - Multi-head Self-Attention между переменными
-  - Feed-forward Network для каждой переменной
+  - FFN для каждой переменной
     ↓
-Projection: каждый токен → прогноз ∈ ℝ^H
-    ↓
-Output: Ŷ ∈ ℝ^(H×C)
+Projection → Ŷ ∈ ℝ^(H×C)
 ```
 
 ## Почему это работает
 
-На первый взгляд, отказ от temporal attention кажется шагом назад. Как модель может прогнозировать временные ряды, не моделируя временные зависимости явно? Но у iTransformer есть несколько аргументов.
+➖ **Временные паттерны проще межканальных**: автокорреляция, сезонность, тренд — относительно простые паттерны для MLP. Зависимости между переменными (как отказ сервера влияет на нагрузку другого) — сложные, контекстно-зависимые связи, для которых attention полезен[^itrans-rationale]
 
-**Временные паттерны проще межканальных.** Автокорреляция, сезонность, тренд — это относительно простые паттерны, которые линейный слой или MLP могут выучить без attention. А вот зависимости между переменными (как отказ одного сервера влияет на нагрузку другого, как цена товара A влияет на спрос товара B) — это сложные, нелинейные, контекстно-зависимые связи, для которых attention действительно полезен.
+[^itrans-rationale]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 3.1. https://arxiv.org/abs/2310.06625
 
-**Меньше шума в attention.** Когда attention применяется по времени, модель должна решить, какие исторические моменты релевантны для прогноза. Это сложная задача, и модель часто «отвлекается» на случайные совпадения значений. Когда attention применяется по переменным, задача проще: понять, какие переменные влияют друг на друга. Эти связи обычно более стабильны и интерпретируемы.
+➖ **Меньше шума в attention**: моделировать какие переменные влияют друг на друга проще, чем какие исторические моменты релевантны
 
-**Вычислительная эффективность.** Матрица внимания размера $C \times C$ обычно гораздо меньше, чем $T \times T$. Если у вас 100 переменных и 1000 временных точек, iTransformer вычисляет $100 \times 100 = 10{,}000$ весов внимания вместо $1{,}000 \times 1{,}000 = 1{,}000{,}000$. Это снижение в 100 раз.
+➖ **Лучшее использование длинного lookback**: в отличие от традиционных трансформеров, iTransformer улучшает качество при увеличении входного окна[^itrans-lookback]
 
-**Индивидуальность переменных сохраняется.** Каждая переменная имеет свой токен, свою историю, свой прогноз. Модель не смешивает их на входе, что позволяет учитывать индивидуальные характеристики каждого ряда.
+[^itrans-lookback]: Liu, Y., et al. "iTransformer." ICLR 2024. Figure 4: "iTransformers show a surprising improvement with increasing lookback window." https://arxiv.org/abs/2310.06625
 
-## Связь с другими идеями
+## Ablation study (Table 3)
 
-iTransformer — не изолированная идея. Она перекликается с несколькими важными концепциями.
+Авторы проверяют разные комбинации компонентов[^itrans-ablation]:
 
-**Channel independence в [PatchTST](https://arxiv.org/abs/2211.14730).** PatchTST обрабатывает каналы независимо и показывает, что это работает. iTransformer идёт дальше: вместо независимости он явно моделирует зависимости между каналами через attention, но при этом отказывается от temporal attention.
+[^itrans-ablation]: Liu, Y., et al. "iTransformer." ICLR 2024. Table 3. https://arxiv.org/abs/2310.06625
 
-**Feature mixing в [TSMixer](https://arxiv.org/abs/2303.06053).** TSMixer чередует time-mixing и feature-mixing через MLP. iTransformer можно рассматривать как экстремальный вариант, где feature-mixing делается через attention (более мощный механизм), а time-mixing — через FFN (более простой).
+| Variate (корреляции) | Temporal (представления) | Результат |
+|---------------------|-------------------------|-----------|
+| Attention | FFN | **лучший** |
+| FFN | Attention | хуже |
+| Attention | Attention | средне |
 
-**Graph Neural Networks.** Если представить переменные как узлы графа, то attention между ними — это форма message passing. iTransformer неявно строит полносвязный граф зависимостей между переменными и учится взвешивать рёбра.
+🔢 **Важно**: vanilla Transformer (Attention по времени, FFN по переменным) показывает **худший результат** среди всех вариантов — это подтверждает «несовместимость ответственностей» в традиционной архитектуре[^itrans-vanilla-worst]
 
-## Сильные стороны
+[^itrans-vanilla-worst]: Liu, Y., et al. "iTransformer." ICLR 2024. Table 3: "The performance of vanilla Transformer performs the worst among these designs." https://arxiv.org/abs/2310.06625
 
-**Эффективность на многомерных данных.** Чем больше переменных, тем больше смысла в моделировании их взаимосвязей. На датасетах с десятками и сотнями переменных (Electricity, Traffic, Weather) iTransformer показывает сильные результаты.
+## Что умеет
 
-**Масштабируемость по времени.** Сложность по длине ряда — линейная (через embedding и FFN), а не квадратичная. Можно работать с длинными историями без специальных приёмов.
+➖ **SOTA на многомерных бенчмарках**: ECL, ETT, Traffic (862 переменных), Weather, PEMS[^itrans-table1]
+➖ **Генерализация на новые переменные**: можно прогнозировать переменные, которых не было при обучении[^itrans-generalization]
+➖ **Интерпретируемость**: матрица внимания показывает связи между переменными[^itrans-interpret]
+➖ **Простота**: стандартный Transformer без модификаций, просто инвертированные входы[^itrans-simplicity]
 
-**Интерпретируемость attention.** Матрица внимания между переменными имеет понятный смысл: какие переменные модель считает связанными. Это можно визуализировать и анализировать.
+[^itrans-table1]: Liu, Y., et al. "iTransformer." ICLR 2024. Table 1, Table 2. https://arxiv.org/abs/2310.06625
+[^itrans-generalization]: Liu, Y., et al. "iTransformer." ICLR 2024. Section 4.4. https://arxiv.org/abs/2310.06625
+[^itrans-interpret]: Liu, Y., et al. "iTransformer." ICLR 2024. Figure 5. https://arxiv.org/abs/2310.06625
+[^itrans-simplicity]: GitHub: thuml/iTransformer. https://github.com/thuml/iTransformer
 
-**Простота реализации.** По сути, это стандартный transformer encoder, просто входы организованы по-другому. Не нужны специальные механизмы вроде sparse attention или auto-correlation.
+## Когда использовать
 
-## Ограничения
+👍 **Хорошо работает:**
+➖ Многомерные данные с сильными зависимостями между переменными (связанные сенсоры, группа товаров-комплементов, метрики одной системы, транспортный трафик)
+➖ Высокоразмерные датасеты (десятки-сотни переменных)
+➖ Длинные входные окна (линейная сложность по времени)
+➖ Когда нужна интерпретируемость межканальных связей
 
-**Требует нескольких переменных.** Для одномерного ряда iTransformer вырождается в один токен, и attention становится бессмысленным. Это модель для многомерных задач.
+👎 **Проблемы:**
+➖ Не работает для одномерных рядов (вырождается в один токен)
+➖ Линейное время-embedding может терять сложные нелинейные паттерны[^itrans-embed-limit]
+➖ Предполагает стабильность межканальных связей во времени
+➖ Если переменные независимы — лучше [PatchTST](https://arxiv.org/abs/2211.14730) или [N-HiTS](https://arxiv.org/abs/2201.12886)
 
-**Линейное время-embedding.** Проекция истории в эмбеддинг через линейный слой — это сильное упрощение. Сложные нелинейные временные паттерны могут теряться. FFN-слои частично компенсируют это, но не полностью.
+[^itrans-embed-limit]: Liu, Y., et al. "iTransformer." ICLR 2024. Appendix D. https://arxiv.org/abs/2310.06625
 
-**Предположение о стабильности связей.** Модель предполагает, что зависимости между переменными более-менее стабильны во времени. Если связи меняются (например, из-за смены бизнес-процесса), модель может не адаптироваться.
+## iTransformer vs PatchTST vs TSMixer
 
-**Не для всех задач.** Если переменные действительно независимы, моделирование их связей — пустая трата ёмкости модели. Channel-independent подходы ([PatchTST](https://arxiv.org/abs/2211.14730), [N-HiTS](https://arxiv.org/abs/2201.12886)) могут быть лучше.
+| Критерий | iTransformer | PatchTST | TSMixer |
+|----------|--------------|----------|---------|
+| Межканальные связи | ✓ Явно | ✗ Независимо | ~ Feature mixing |
+| Независимые каналы | ✗ Избыточно | ✓ Оптимально | ~ Работает |
+| Много каналов (>100) | ~ $C^2$ attention | ✓ Независимо | ~ |
+| Интерпретируемость связей | ✓ | ✗ | ✗ |
+| Одномерные ряды | ✗ | ✓ | ✗ |
+| Transfer learning | ~ | ✓✓ | ~ |
 
-## Код: iTransformer на Store Sales
+## Реализации
 
-python
-
-```python
-import pandas as pd
-import numpy as np
-from neuralforecast import NeuralForecast
-from neuralforecast.models import iTransformer
-from neuralforecast.losses.pytorch import MAE
-
-# Загружаем данные
-train = pd.read_csv('train.csv')
-train['ds'] = pd.to_datetime(train['ds'])
-
-# Параметры
-HORIZON = 16
-INPUT_SIZE = 96
-
-# Конфигурация iTransformer
-model = iTransformer(
-    h=HORIZON,
-    input_size=INPUT_SIZE,
-    n_series=None,                    # определится автоматически
-    loss=MAE(),
-    max_steps=1000,
-    
-    # Архитектура
-    hidden_size=256,                  # размерность эмбеддинга D
-    n_heads=4,                        # количество голов внимания
-    e_layers=3,                       # количество слоёв encoder
-    d_ff=512,                         # размерность FFN
-    dropout=0.1,
-    
-    scaler_type='standard',
-    random_seed=42
-)
-
-# Обучаем
-nf = NeuralForecast(
-    models=[model],
-    freq='D'
-)
-nf.fit(df=train)
-
-# Прогнозируем
-forecasts = nf.predict()
-```
-
-### Визуализация attention между переменными
-
-python
-
-```python
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-def plot_variate_attention(attention_weights, variable_names):
-    """
-    Визуализация матрицы внимания между переменными.
-    
-    Args:
-        attention_weights: матрица (C, C) весов внимания
-        variable_names: список названий переменных
-    """
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    sns.heatmap(
-        attention_weights,
-        xticklabels=variable_names,
-        yticklabels=variable_names,
-        cmap='Blues',
-        annot=True,
-        fmt='.2f',
-        ax=ax
-    )
-    
-    ax.set_title('Attention между переменными')
-    ax.set_xlabel('Key (на что смотрим)')
-    ax.set_ylabel('Query (откуда смотрим)')
-    
-    plt.tight_layout()
-    plt.show()
-
-# Пример интерпретации:
-# Если attention[i, j] высокий, модель считает, что
-# переменная j важна для прогнозирования переменной i
-```
-
-### Сравнение с PatchTST и TSMixer
-
-python
-
-```python
-from neuralforecast.models import PatchTST, TSMixer
-
-models = [
-    iTransformer(
-        h=HORIZON,
-        input_size=INPUT_SIZE,
-        hidden_size=256,
-        n_heads=4,
-        e_layers=3,
-        loss=MAE(),
-        max_steps=1000,
-        scaler_type='standard',
-        random_seed=42
-    ),
-    PatchTST(
-        h=HORIZON,
-        input_size=INPUT_SIZE,
-        patch_len=16,
-        stride=8,
-        hidden_size=128,
-        n_heads=4,
-        e_layers=3,
-        loss=MAE(),
-        max_steps=1000,
-        scaler_type='standard',
-        random_seed=42
-    ),
-    TSMixer(
-        h=HORIZON,
-        input_size=INPUT_SIZE,
-        n_block=4,
-        ff_dim=64,
-        loss=MAE(),
-        max_steps=1000,
-        scaler_type='standard',
-        random_seed=42
-    )
-]
-
-nf = NeuralForecast(models=models, freq='D')
-nf.fit(df=train)
-forecasts = nf.predict()
-
-# Сравнение метрик
-for model_name in ['iTransformer', 'PatchTST', 'TSMixer']:
-    mae = np.mean(np.abs(test['y'].values - forecasts[model_name].values))
-    print(f"{model_name}: MAE = {mae:.2f}")
-```
-
-### Анализ: когда iTransformer лучше
-
-python
-
-```python
-def analyze_cross_correlation(df, variable_col='unique_id', value_col='y'):
-    """
-    Анализ кросс-корреляций между переменными.
-    Высокие корреляции → iTransformer может помочь.
-    """
-    # Преобразуем в wide format
-    wide = df.pivot(index='ds', columns=variable_col, values=value_col)
-    
-    # Считаем корреляционную матрицу
-    corr_matrix = wide.corr()
-    
-    # Статистики
-    # Убираем диагональ (корреляция с собой)
-    mask = np.ones(corr_matrix.shape, dtype=bool)
-    np.fill_diagonal(mask, False)
-    off_diag = corr_matrix.values[mask]
-    
-    print(f"Кросс-корреляции между переменными:")
-    print(f"  Средняя абсолютная: {np.mean(np.abs(off_diag)):.3f}")
-    print(f"  Максимальная: {np.max(np.abs(off_diag)):.3f}")
-    print(f"  Доля > 0.3: {np.mean(np.abs(off_diag) > 0.3):.1%}")
-    
-    # Рекомендация
-    if np.mean(np.abs(off_diag)) > 0.2:
-        print("\n→ Высокие кросс-корреляции. iTransformer может дать преимущество.")
-    else:
-        print("\n→ Низкие кросс-корреляции. Channel-independent модели могут быть лучше.")
-    
-    return corr_matrix
-
-corr = analyze_cross_correlation(train)
-```
-
-## iTransformer vs PatchTST vs TSMixer: когда что выбирать
-
-|Критерий|iTransformer|PatchTST|TSMixer|
-|---|---|---|---|
-|Сильные межканальные связи|✓ Моделирует явно|✗ Независимо|~ Feature mixing|
-|Независимые каналы|✗ Избыточно|✓ Оптимально|~ Работает|
-|Длинные входные ряды|✓ Линейная сложность|✓ Патчинг|✓ Линейная|
-|Много каналов (>100)|~ $C^2$ attention|✓ Независимо|~ $C$ mixing|
-|Мало каналов (<10)|✓ Хорошо|✓ Хорошо|✓ Хорошо|
-|Интерпретируемость связей|✓ Attention веса|✗ Нет|✗ Нет|
-|Одномерные ряды|✗ Не применим|✓ Работает|✗ Не применим|
-
-**Практические рекомендации:**
-
-- **Используйте iTransformer**, если у вас многомерные данные с подозрением на сильные зависимости между переменными (например, несколько связанных сенсоров, группа товаров-комплементов, метрики одной системы).
-- **Используйте PatchTST**, если переменные скорее независимы или если вам нужен transfer learning / pretraining.
-- **Используйте TSMixer**, если хотите баланс между моделированием связей и простотой, или если не уверены в структуре данных.
-
-## Что дальше
-
-Мы завершили обзор трансформерных архитектур для временных рядов. PatchTST показал, как патчинг решает проблему point-wise attention. iTransformer продемонстрировал, что иногда лучший способ использовать трансформер — это применить его не там, где ожидаешь.
-
-В следующей части мы обратимся к архитектурам, которые многие считали устаревшими — рекуррентным сетям и их современным наследникам. [DeepAR](https://arxiv.org/abs/1704.04110) заложил основы вероятностного прогнозирования с RNN. TiRex и FlowState показывают, что последовательные модели в форме xLSTM и State Space Models возвращаются и конкурируют с трансформерами на современных бенчмарках.
+| Библиотека | Ссылка |
+|------------|--------|
+| Официальный код | [thuml/iTransformer](https://github.com/thuml/iTransformer) |
+| Time-Series-Library | [thuml/Time-Series-Library](https://github.com/thuml/Time-Series-Library) |
+| GluonTS (probabilistic head) | [awslabs/gluonts](https://github.com/awslabs/gluonts) |
+| neuralforecast | [Nixtla/neuralforecast](https://github.com/Nixtla/neuralforecast) |
 
 :::{seealso}
-**Источники и ссылки:**
-- Liu, Y., et al. (2024). [iTransformer: Inverted Transformers Are Effective for Time Series Forecasting](https://arxiv.org/abs/2310.06625). ICLR 2024 Spotlight.
-- [Официальный код iTransformer](https://github.com/thuml/iTransformer) — Tsinghua GitHub
+**Источники:**
+- Liu, Y., et al. (2024). [iTransformer: Inverted Transformers Are Effective for Time Series Forecasting](https://arxiv.org/abs/2310.06625). ICLR 2024 Spotlight
+- [Официальный код](https://github.com/thuml/iTransformer) — Tsinghua ML Group
+- [OpenReview](https://openreview.net/forum?id=JePfAI8fah) — рецензии и ответы авторов
 :::

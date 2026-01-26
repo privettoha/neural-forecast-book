@@ -2,386 +2,191 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/24_tirex.ipynb)
 
-## Ключевая идея
+TiRex ([статья](https://arxiv.org/abs/2505.23719), NeurIPS 2025) — модель от NX-AI, которая в 2025 году занимает #1 позицию на бенчмарке [GIFT-Eval](https://huggingface.co/spaces/Salesforce/GIFT-Eval), обходя Chronos Bolt (Amazon), TimesFM (Google), Moirai (Salesforce) и TabPFN-TS (Prior Labs)[^tirex-leaderboard]. И всё это на основе xLSTM — модернизированной версии LSTM от [Сеппа Хохрайтера](https://en.wikipedia.org/wiki/Sepp_Hochreiter), одного из создателей оригинальной архитектуры в 1997 году
 
-В 2025 году, когда всё внимание приковано к трансформерам и foundation models, команда NX-AI выпускает модель на основе xLSTM — модернизированной версии LSTM от [Сеппа Хохрайтера](https://en.wikipedia.org/wiki/Sepp_Hochreiter), одного из создателей оригинальной архитектуры в 1997 году. И эта модель занимает топовые позиции на бенчмарках GIFT-Eval и Chronos-ZS, обходя многие трансформерные решения.
+[^tirex-leaderboard]: Auer, A., et al. "TiRex: Zero-Shot Forecasting Across Long and Short Horizons with Enhanced In-Context Learning." NeurIPS 2025. Figure 10: "TiRex leads the GiftEval-ZS benchmark." https://arxiv.org/abs/2505.23719
 
-Название расшифровывается как Time Series Rex — «король временных рядов». Амбициозно, но результаты подтверждают: 35 миллионов параметров, zero-shot прогнозирование, вероятностный выход с квантилями, и при этом state-of-the-art качество как на коротких, так и на длинных горизонтах.
+## Идея
 
-Главный вопрос, на который отвечает TiRex: можно ли взять идею LSTM, исправить её известные проблемы, и получить архитектуру, конкурентную с трансформерами? Ответ — да.
+Название расшифровывается как **Time Series Rex** — «король временных рядов». Ключевой вопрос, на который отвечает TiRex: можно ли взять идею LSTM, исправить её известные проблемы, и получить архитектуру, конкурентную с трансформерами для zero-shot прогнозирования?
+
+Главное преимущество LSTM над трансформерами и SSM — **state tracking**: способность отслеживать скрытые состояния процесса во времени[^xlstm-statetracking]. Трансформеры и SSM математически не способны решать задачи state tracking (Merrill et al., 2024), а для временных рядов это критично — нужно «помнить» текущее состояние системы, чтобы корректно прогнозировать будущее[^tirex-statetracking]
+
+[^xlstm-statetracking]: Beck, M., et al. "xLSTM: Extended Long Short-Term Memory." NeurIPS 2024. Section 4.1: "Memory mixing enables to solve state tracking problems, and therefore LSTMs are more expressive than SSMs and Transformers." https://arxiv.org/abs/2405.04517
+
+[^tirex-statetracking]: Auer, A., et al. "TiRex." NeurIPS 2025. Section 1: "Unlike transformers, state-space models, or parallelizable RNNs such as RWKV, TiRex retains state-tracking, a critical property for long-horizon forecasting." https://arxiv.org/abs/2505.23719
 
 ## Почему LSTM нужно было переизобретать
 
-Классический LSTM имеет три фундаментальные проблемы, которые ограничивали его применение для современных задач.
+Классический LSTM имеет три фундаментальные проблемы[^xlstm-limitations]:
 
-**Затухание градиентов на длинных последовательностях.** Несмотря на механизм гейтов, информация всё равно «затухает» при прохождении через сотни и тысячи шагов. LSTM может «помнить» важное событие 50 шагов назад, но 500 шагов — уже сложно.
+[^xlstm-limitations]: Beck, M., et al. "xLSTM." NeurIPS 2024. Section 1, Figure 2. https://arxiv.org/abs/2405.04517
 
-**Ограниченная ёмкость памяти.** Скрытое состояние LSTM — это вектор фиксированного размера. Вся информация о прошлом должна сжаться в этот вектор. Чем длиннее история, тем сильнее сжатие, тем больше потерь.
+➖ **Затухание градиентов**: несмотря на механизм гейтов, информация «затухает» при прохождении через сотни шагов. Сигмоидные гейты ограничены диапазоном (0, 1), после 100 шагов сигнал $0.99^{100} \approx 0.37$
 
-**Невозможность параллелизации.** Каждый шаг LSTM зависит от предыдущего: $h_t = f(h_{t-1}, x_t)$. Нельзя вычислить $h_{100}$, не вычислив $h_1, h_2, ..., h_{99}$. Это делает обучение медленным по сравнению с трансформерами, которые обрабатывают всю последовательность параллельно.
+➖ **Ограниченная ёмкость памяти**: скрытое состояние — вектор фиксированного размера. Вся информация о прошлом должна сжаться в этот вектор
 
-[xLSTM](https://arxiv.org/abs/2405.04517) — extended LSTM — решает первые две проблемы. Третья остаётся (это фундаментальное свойство рекуррентности), но современные GPU и оптимизированные CUDA-ядра делают её менее критичной.
+➖ **Невозможность параллелизации**: каждый шаг зависит от предыдущего: $h_t = f(h_{t-1}, x_t)$. Нельзя вычислить $h_{100}$, не вычислив $h_1, ..., h_{99}$
 
 ## xLSTM: что изменилось
 
-xLSTM вводит два новых типа ячеек: sLSTM (scalar LSTM) и mLSTM (matrix LSTM). TiRex использует mLSTM как основу.
+[xLSTM](https://arxiv.org/abs/2405.04517) (NeurIPS 2024) вводит два новых типа ячеек: **sLSTM** (scalar LSTM) и **mLSTM** (matrix LSTM)[^xlstm-variants]. TiRex использует **sLSTM** — именно он сохраняет способность к state tracking[^tirex-slstm]
 
-### Экспоненциальные гейты
+[^xlstm-variants]: Beck, M., et al. "xLSTM." NeurIPS 2024. Section 3: "(i) sLSTM with a scalar memory, a scalar update, and new memory mixing, (ii) mLSTM that is fully parallelizable with a matrix memory and a covariance update rule." https://arxiv.org/abs/2405.04517
 
-В классическом LSTM гейты используют сигмоиду, которая ограничена диапазоном (0, 1):
+[^tirex-slstm]: Auer, A., et al. "TiRex." NeurIPS 2025. Figure 2: "TiRex adopts the block design proposed by Beck et al. (2025), but substitutes the mLSTM with a sLSTM module as the sequence mixing component. Only sLSTM allows for state-tracking." https://arxiv.org/abs/2505.23719
 
-$$f_t = \sigma(W_f \cdot [h_{t-1}, x_t] + b_f)$$
+🔢 **Экспоненциальные гейты**
+В классическом LSTM: $f_t = \sigma(W_f \cdot [h_{t-1}, x_t] + b_f)$ — сигмоида ограничена (0, 1)
 
-Это создаёт проблему: даже если forget gate близок к 1 (почти ничего не забываем), после 100 шагов сигнал уменьшается до $0.99^{100} \approx 0.37$. После 1000 шагов — практически до нуля.
+В xLSTM: $f_t = \exp(w_f \cdot x_t + b_f)$ — гейт может быть >1, сигнал не только сохраняется, но и усиливается. Специальная нормализация предотвращает взрыв значений[^xlstm-expgating]
 
-xLSTM заменяет сигмоиду на экспоненту:
+[^xlstm-expgating]: Beck, M., et al. "xLSTM." NeurIPS 2024. Section 3.1: "We introduce exponential gating with appropriate normalization and stabilization techniques." https://arxiv.org/abs/2405.04517
 
-$$f_t = \exp(w_f \cdot x_t + b_f)$$
+🔢 **Memory mixing (только sLSTM)**
+sLSTM добавляет механизм «смешивания памяти» между ячейками — именно это позволяет решать задачи state tracking[^xlstm-memorymixing]. mLSTM не имеет memory mixing (зато полностью параллелизуем), поэтому TiRex выбирает sLSTM
 
-Теперь гейт может быть больше 1, что позволяет сигналу не только сохраняться, но и усиливаться. Специальная нормализация предотвращает взрыв значений.
+[^xlstm-memorymixing]: Beck, M., et al. "xLSTM." NeurIPS 2024. Section 4.1: "In contrast to the new sLSTM, [other] approaches do not allow memory mixing. Memory mixing enables to solve state tracking problems." https://arxiv.org/abs/2405.04517
 
-### Матричная память (mLSTM)
+🔢 **mLSTM (для справки)**
+mLSTM хранит состояние в матрице $C_t \in \mathbb{R}^{d \times d}$ вместо вектора — квадратично больше ёмкости. Использует covariance update rule, похожее на key-value из трансформеров[^xlstm-mlstm]. TiRex его не использует, но важно знать для понимания семейства xLSTM
 
-Классический LSTM хранит состояние в векторе $c_t \in \mathbb{R}^d$. mLSTM хранит состояние в матрице $C_t \in \mathbb{R}^{d \times d}$. Это квадратично увеличивает ёмкость памяти.
-
-Обновление матричной памяти:
-
-$$C_t = f_t \odot C_{t-1} + i_t \odot (v_t \otimes k_t)$$
-
-где $v_t$ — value vector, $k_t$ — key vector, $\otimes$ — внешнее произведение. Это похоже на механизм key-value из трансформеров, но встроенный в рекуррентную структуру.
-
-Чтение из памяти:
-
-$$h_t = o_t \odot (C_t \cdot q_t)$$
-
-где $q_t$ — query vector. Снова аналогия с трансформерами: запрос извлекает релевантную информацию из памяти.
-
-### Covariance update rule
-
-mLSTM использует специальное правило обновления, которое можно интерпретировать как накопление ковариационной матрицы между ключами и значениями. Это позволяет модели выучивать ассоциации между паттернами во входных данных.
+[^xlstm-mlstm]: Beck, M., et al. "xLSTM." NeurIPS 2024. Section 3.2: "mLSTM that is fully parallelizable with a matrix memory and a covariance update rule." https://arxiv.org/abs/2405.04517
 
 ## Архитектура TiRex
 
-TiRex строится на mLSTM, но добавляет компоненты, специфичные для временных рядов.
+TiRex строится на sLSTM с несколькими компонентами, специфичными для временных рядов[^tirex-arch]:
 
-### Входной слой
+[^tirex-arch]: Auer, A., et al. "TiRex." NeurIPS 2025. Figure 2, Section 3. https://arxiv.org/abs/2505.23719
 
-Временной ряд разбивается на патчи (аналогично [PatchTST](https://arxiv.org/abs/2211.14730)), каждый патч проецируется в эмбеддинг:
+🔢 **Patching**
+Временной ряд разбивается на патчи (аналогично [PatchTST](https://arxiv.org/abs/2211.14730)), каждый патч проецируется в эмбеддинг. Максимальная длина контекста — 2048[^tirex-context]
 
-```
-Input: x ∈ ℝ^T (временной ряд)
-    ↓
-Patching: разбиение на патчи размера P
-    ↓
-Linear projection: каждый патч → эмбеддинг ∈ ℝ^D
-    ↓
-+ Positional encoding
-```
-
-Патчинг решает две задачи: снижает длину последовательности (меньше рекуррентных шагов) и создаёт более богатые токены (патч информативнее точки).
-
-### mLSTM backbone
-
-Последовательность эмбеддингов обрабатывается стеком mLSTM-слоёв:
+[^tirex-context]: AI Horizon Forecast. "TiRex: LSTMs Take The Lead Again." 2025: "The model supports a maximum context length of 2048." https://aihorizonforecast.substack.com/p/tirex-lstms-take-the-lead-again-in
 
 ```
-Patch embeddings
+Input: x ∈ ℝ^T
     ↓
-mLSTM Layer 1
+Patching → последовательность патчей
     ↓
-mLSTM Layer 2
-    ↓
-...
-    ↓
-mLSTM Layer L
-    ↓
-Hidden states для каждой позиции
+Linear projection + Instance Normalization
 ```
 
-Каждый mLSTM-слой включает:
+🔢 **sLSTM backbone**
+Последовательность обрабатывается стеком sLSTM-блоков. Каждый блок включает:
+➖ sLSTM с экспоненциальными гейтами
+➖ RMSNorm (вместо LayerNorm)
+➖ Feed-forward network
+➖ Residual skip connections[^tirex-blocks]
 
-- Матричную память с экспоненциальными гейтами
-- Layer normalization
-- Residual connection
-- Feed-forward подсеть
+[^tirex-blocks]: Auer, A., et al. "TiRex." NeurIPS 2025. Figure 2: "Each block comprises a sLSTM module followed by a feed-forward network, with both components preceded by RMSNorm. Additionally, all sLSTM and feedforward layers include residual skip connections." https://arxiv.org/abs/2505.23719
 
-### Выходной слой с квантилями
+🔢 **CPM (Causal Patch Masking)**
+Ключевая инновация TiRex — специальная стратегия маскирования при обучении[^tirex-cpm]. Вместо того чтобы подставлять предсказания обратно как входы (как в DeepAR), TiRex помечает будущие шаги как missing values. Скрытое состояние sLSTM переносит вперёд не точечную оценку, а полное predictive distribution
 
-TiRex выдаёт не точечный прогноз, а набор квантилей:
+[^tirex-cpm]: Auer, A., et al. "TiRex." NeurIPS 2025. Section 3.2: "We propose a training-time masking strategy called CPM." https://arxiv.org/abs/2505.23719
 
-```
-Final hidden state
-    ↓
-Linear → 9 квантилей для каждого шага горизонта
-    ↓
-Output: (horizon, 9) — квантили [0.1, 0.2, ..., 0.9]
-```
+Преимущества CPM:
+➖ **Uncertainty propagation**: модель не коммитится к точечной оценке на границах патчей
+➖ **Coherence**: квантильные прогнозы второго патча условны на всём posterior, а не на leaked estimate
+➖ Избегает «variance collapse» при передаче медианы[^tirex-cpm-benefits]
 
-Это позволяет получить вероятностный прогноз без Monte Carlo sampling — быстрее, чем у DeepAR.
+[^tirex-cpm-benefits]: AI Horizon Forecast. "TiRex: LSTMs Take The Lead Again." 2025. https://aihorizonforecast.substack.com/p/tirex-lstms-take-the-lead-again-in
 
-## Особенности обучения
+🔢 **Квантильный выход**
+TiRex выдаёт 9 квантилей [0.1, 0.2, ..., 0.9] для каждого шага горизонта за один forward pass — без Monte Carlo sampling[^tirex-quantiles]
 
-### Предобучение на разнообразных данных
+[^tirex-quantiles]: GitHub: NX-AI/tirex. "Quantile Predictions: TiRex provides both point estimates and quantile estimates." https://github.com/NX-AI/tirex
 
-TiRex предобучен на большом корпусе временных рядов:
+## Экспериментальные результаты
 
-- Публичные датасеты (Monash, M-competitions)
-- Синтетические ряды с контролируемыми паттернами
-- Данные разных доменов (ритейл, энергетика, транспорт)
+Авторы тестируют на двух основных бенчмарках[^tirex-benchmarks]:
 
-Разнообразие важно: модель должна видеть разные типы сезонности, разные масштабы, разные уровни шума, чтобы обобщать на новые ряды.
+[^tirex-benchmarks]: Auer, A., et al. "TiRex." NeurIPS 2025. Section 4. https://arxiv.org/abs/2505.23719
 
-### Quantile loss
+**GIFT-Eval** — 28 датасетов, >144 000 временных рядов, 177M точек данных. Покрывает short, medium, long-term горизонты[^tirex-gifteval]
 
-Вместо negative log-likelihood (как в DeepAR) TiRex оптимизирует quantile loss — сумму pinball losses для каждого квантиля:
+[^tirex-gifteval]: GitHub: autogluon/autogluon. Issue #5146: "TiRex achieves state-of-the-art performance on the GiftEval benchmark, a large-scale collection of 28 datasets." https://github.com/autogluon/autogluon/issues/5146
 
-$$\mathcal{L}_q(\hat{y}, y) = \begin{cases} q \cdot (y - \hat{y}) & \text{если } y \geq \hat{y} \\ (1-q) \cdot (\hat{y} - y) & \text{если } y < \hat{y} \end{cases}$$
+**Chronos-ZS** — 27 датасетов для short-term forecasting
 
-$$\mathcal{L} = \sum_{q \in \{0.1, ..., 0.9\}} \mathcal{L}_q(\hat{y}_q, y)$$
+🔢 **Ключевые результаты** (Figure 10 в статье):
+➖ TiRex — **#1 overall** на GiftEval-ZS
+➖ TiRex — **первая zero-shot модель**, которая превосходит PatchTST и TFT в long-term задачах[^tirex-vs-patchtst]
+➖ В отличие от других моделей, которые специализируются на short ИЛИ long-term, TiRex отлично работает на **обоих**[^tirex-both]
 
-Это прямой подход: модель учится предсказывать каждый квантиль напрямую, без предположений о форме распределения.
+[^tirex-vs-patchtst]: AI Horizon Forecast. "TiRex: LSTMs Take The Lead Again." 2025: "TiRex becomes the first zero-shot model to beat PatchTST and TFT in long-term tasks." https://aihorizonforecast.substack.com/p/tirex-lstms-take-the-lead-again-in
 
-### CUDA-оптимизация
+[^tirex-both]: Auer, A., et al. "TiRex." NeurIPS 2025. Abstract: "TiRex sets a new state of the art in zero-shot time series forecasting... outperforming significantly larger models... across both short- and long-term forecasts." https://arxiv.org/abs/2505.23719
 
-Авторы TiRex написали custom CUDA kernels для mLSTM, которые значительно ускоряют обучение и инференс. Это важно, потому что наивная реализация рекуррентных вычислений на Python/PyTorch была бы очень медленной.
+🔢 **Важно про data leakage**: авторы явно указывают, какие модели имеют overlap с тестовыми данными (отмечены как "Zero-shot Leak" в Figure 10). TiRex чист — версия 1.1-gifteval специально очищена от overlap[^tirex-leakage]
 
-Требования: GPU с compute capability 8.0+ (Ampere и новее). На более старых GPU модель работает, но медленнее.
+[^tirex-leakage]: HuggingFace: NX-AI/TiRex-1.1-gifteval. "This specific version includes the 1.1 improvements plus the pretraining dataset has been cleaned to remove overlaps with the GIFT-Eval test dataset." https://huggingface.co/NX-AI/TiRex-1.1-gifteval
 
-## Сильные стороны
+## Что умеет
 
-**State-of-the-art на бенчмарках.** TiRex занимает топовые позиции на GIFT-Eval и Chronos-ZS — двух основных бенчмарках для zero-shot прогнозирования. Это не просто «ещё одна модель», а реальный претендент на лидерство.
+➖ **SOTA на zero-shot бенчмарках**: превосходит модели с 200M-500M параметров (Chronos Bolt, TimesFM-2.0, Toto), имея только 35M[^tirex-params]
+➖ **State tracking**: уникальная способность среди foundation models, критичная для длинных горизонтов
+➖ **Работает и на short, и на long horizons**: редкое сочетание
+➖ **Эффективный вероятностный выход**: квантили за один forward pass
+➖ **Компактность**: 35M параметров, можно запускать на edge devices[^tirex-edge]
+➖ **Полностью открытая**: веса, код, данные доступны
 
-**Работает и на коротких, и на длинных горизонтах.** В отличие от многих моделей, которые хороши либо на коротких, либо на длинных горизонтах, TiRex показывает стабильные результаты в обоих режимах. Это следствие комбинации патчинга и матричной памяти.
+[^tirex-params]: GitHub: NX-AI/tirex. "TiRex is a 35M parameter pre-trained time series forecasting model." https://github.com/NX-AI/tirex
+[^tirex-edge]: NX-AI Solutions. "You can run TiRex on a PLC or an even smaller devices." https://www.nx-ai.com/en/solutions
 
-**Эффективный вероятностный выход.** Квантили генерируются за один forward pass, без многократного сэмплирования. Это быстрее, чем Monte Carlo в [DeepAR](https://arxiv.org/abs/1704.04110) или [Chronos](https://arxiv.org/abs/2403.07815).
+## Когда использовать
 
-**Относительно компактная модель.** 35M параметров — это меньше, чем у многих foundation models. Можно запускать на consumer-grade GPU.
+👍 **Хорошо работает:**
+➖ Zero-shot прогноз без обучения на своих данных
+➖ Баланс качества на коротких и длинных горизонтах
+➖ Вероятностный выход без сложностей Monte Carlo
+➖ Nvidia GPU с compute capability ≥ 8.0 (Ampere+)[^tirex-gpu]
+➖ Sparse/intermittent data (благодаря CPM)
 
-**Полностью открытая.** Веса, код, данные для воспроизведения — всё доступно. В отличие от TimeGPT, здесь нет закрытого API.
+[^tirex-gpu]: GitHub: NX-AI/tirex. "TiRex is currently only tested on Linux systems and Nvidia GPUs with compute capability >= 8.0." https://github.com/NX-AI/tirex
 
-## Ограничения
+👎 **Проблемы:**
+➖ **Зависимость от CUDA kernels**: без кастомных ядер — экспериментальный режим, «likely degrade forecasting results»[^tirex-cuda]
+➖ **Не поддерживает ковариаты**: zero-shot режим не принимает static/dynamic features[^tirex-nocov]
+➖ **Последовательный инференс**: рекуррентная природа sLSTM
+➖ **Фиксированные квантили**: только [0.1, ..., 0.9], для 0.95 нужна интерполяция
+➖ **Новизна**: мало практического опыта в продакшене
 
-**Зависимость от CUDA kernels.** Для полной скорости нужны кастомные CUDA-ядра, которые требуют современного GPU и могут быть сложны в установке. Без них модель работает, но значительно медленнее.
-
-**Последовательный инференс.** Несмотря на оптимизации, рекуррентная природа означает, что инференс всё равно последовательный. Для очень длинных входных последовательностей это может быть узким местом.
-
-**Новизна архитектуры.** xLSTM появился в 2024 году, TiRex — в 2025. Практического опыта применения в продакшене пока мало. Могут быть неизвестные edge cases.
-
-**Фиксированные квантили.** Модель выдаёт фиксированный набор квантилей (0.1, 0.2, ..., 0.9). Если нужен произвольный квантиль (например, 0.95), придётся интерполировать.
-
-## Код: TiRex
-
-python
-
-```python
-import torch
-from tirex import load_model, ForecastModel
-
-# Загрузка предобученной модели
-model: ForecastModel = load_model("NX-AI/TiRex")
-model.to('cuda')
-
-# Подготовка данных
-# TiRex ожидает тензор (batch, time)
-data = torch.randn(5, 128).to('cuda')  # 5 рядов по 128 точек
-
-# Прогнозирование
-quantiles, mean = model.forecast(
-    context=data,
-    prediction_length=64
-)
-
-# quantiles: (batch, 9, horizon) — 9 квантилей
-# mean: (batch, horizon) — среднее (медиана)
-
-print(f"Прогноз shape: {mean.shape}")
-print(f"Квантили shape: {quantiles.shape}")
-
-# Доступ к конкретным квантилям
-# Индексы: 0=0.1, 1=0.2, ..., 4=0.5 (медиана), ..., 8=0.9
-p10 = quantiles[:, 0, :]  # 10-й перцентиль
-p50 = quantiles[:, 4, :]  # медиана
-p90 = quantiles[:, 8, :]  # 90-й перцентиль
-```
-
-### Работа с pandas DataFrame
-
-python
-
-```python
-import pandas as pd
-import numpy as np
-from tirex import load_model
-
-model = load_model("NX-AI/TiRex")
-model.to('cuda')
-
-# Загружаем данные в формате neuralforecast
-df = pd.read_csv('train.csv')
-df['ds'] = pd.to_datetime(df['ds'])
-
-# Параметры
-HORIZON = 16
-CONTEXT_LENGTH = 128
-
-# Подготовка: преобразуем в тензоры
-def prepare_data(df, context_length):
-    """Преобразует DataFrame в тензоры для TiRex."""
-    series_list = []
-    ids = df['unique_id'].unique()
-    
-    for uid in ids:
-        series = df[df['unique_id'] == uid]['y'].values
-        # Берём последние context_length точек
-        if len(series) >= context_length:
-            series_list.append(series[-context_length:])
-    
-    return torch.tensor(np.array(series_list), dtype=torch.float32)
-
-context = prepare_data(df, CONTEXT_LENGTH).to('cuda')
-
-# Прогноз
-quantiles, mean = model.forecast(
-    context=context,
-    prediction_length=HORIZON
-)
-
-# Преобразуем обратно в DataFrame
-forecast_df = pd.DataFrame({
-    'unique_id': np.repeat(df['unique_id'].unique(), HORIZON),
-    'horizon': np.tile(np.arange(1, HORIZON + 1), len(df['unique_id'].unique())),
-    'forecast': mean.cpu().numpy().flatten(),
-    'p10': quantiles[:, 0, :].cpu().numpy().flatten(),
-    'p90': quantiles[:, 8, :].cpu().numpy().flatten()
-})
-```
-
-### Сравнение с другими моделями
-
-python
-
-```python
-from tirex import load_model
-from neuralforecast import NeuralForecast
-from neuralforecast.models import NHITS, PatchTST
-import time
-
-# TiRex
-tirex = load_model("NX-AI/TiRex").to('cuda')
-
-# Prepare context
-context = torch.randn(100, 256).to('cuda')  # 100 рядов
-
-# Benchmark TiRex
-start = time.time()
-for _ in range(10):
-    _, mean_tirex = tirex.forecast(context, prediction_length=32)
-tirex_time = (time.time() - start) / 10
-print(f"TiRex: {tirex_time:.3f}s per batch")
-
-# Для сравнения с N-HiTS и PatchTST
-# нужно использовать их через NeuralForecast API
-# (разный интерфейс, разная подготовка данных)
-```
-
-### Визуализация вероятностного прогноза
-
-python
-
-```python
-import matplotlib.pyplot as plt
-
-def plot_tirex_forecast(history, quantiles, mean, title=''):
-    """
-    Визуализация прогноза TiRex с квантилями.
-    
-    Args:
-        history: исторические значения (1D array)
-        quantiles: квантили прогноза (9, horizon)
-        mean: средний прогноз (horizon,)
-    """
-    fig, ax = plt.subplots(figsize=(12, 4))
-    
-    # История
-    ax.plot(range(len(history)), history, 
-            color='black', label='История', linewidth=1.5)
-    
-    # Прогноз
-    forecast_start = len(history)
-    forecast_range = range(forecast_start, forecast_start + len(mean))
-    
-    # Медиана
-    ax.plot(forecast_range, mean, 
-            color='blue', label='Медиана', linewidth=2)
-    
-    # 80% интервал (p10-p90)
-    ax.fill_between(
-        forecast_range,
-        quantiles[0],  # p10
-        quantiles[8],  # p90
-        alpha=0.2, color='blue', label='80% интервал'
-    )
-    
-    # 50% интервал (p25-p75)
-    ax.fill_between(
-        forecast_range,
-        quantiles[2],  # p30 (ближайший к p25)
-        quantiles[6],  # p70 (ближайший к p75)
-        alpha=0.4, color='blue', label='50% интервал'
-    )
-    
-    ax.axvline(x=forecast_start, color='gray', linestyle='--', alpha=0.5)
-    ax.legend()
-    ax.set_title(title)
-    ax.set_xlabel('Время')
-    ax.set_ylabel('Значение')
-    
-    plt.tight_layout()
-    plt.show()
-
-# Пример использования
-sample_idx = 0
-history = context[sample_idx].cpu().numpy()
-sample_quantiles = quantiles[sample_idx].cpu().numpy()
-sample_mean = mean[sample_idx].cpu().numpy()
-
-plot_tirex_forecast(history, sample_quantiles, sample_mean, 
-                    title='TiRex: прогноз с квантилями')
-```
+[^tirex-cuda]: GitHub: NX-AI/tirex. "However, this is at the moment EXPERIMENTAL, slows down TiRex considerably and likely degrade forecasting results!" https://github.com/NX-AI/tirex
+[^tirex-nocov]: GitHub: autogluon/autogluon. "TiRex doesn't support covariates or static features in zero-shot mode." https://github.com/autogluon/autogluon/issues/5146
 
 ## TiRex vs другие модели
 
-|Критерий|TiRex|DeepAR|PatchTST|Chronos|
-|---|---|---|---|---|
-|Архитектура|xLSTM|LSTM|Transformer|T5 (encoder-decoder)|
-|Параметры|35M|~5M (зависит от config)|~10M|20M–700M|
-|Zero-shot|✓|✗ (нужно обучать)|~ (с pretraining)|✓|
-|Вероятностный выход|✓ Квантили|✓ Распределение|✗ Точечный|✓ Сэмплы|
-|Ковариаты|✗|✓|✗|✗|
-|Скорость инференса|Средняя|Низкая|Высокая|Средняя|
-|GIFT-Eval ranking|Top-3|Не участвует|Top-10|Top-5|
+| Критерий | TiRex | DeepAR | PatchTST | Chronos |
+|----------|-------|--------|----------|---------|
+| Архитектура | sLSTM (xLSTM) | LSTM | Transformer | T5 |
+| Параметры | 35M | ~5M | ~10M | 20M–700M |
+| Zero-shot | ✓ | ✗ | ~ | ✓ |
+| Вероятностный выход | ✓ Квантили | ✓ Распределение | ✗ | ✓ Сэмплы |
+| Ковариаты | ✗ | ✓ | ✗ | ✗ |
+| State tracking | ✓ | ✓ | ✗ | ✗ |
+| GIFT-Eval rank | #1 | — | Top-10 | Top-5 |
 
-**Когда использовать TiRex:**
+## Реализации
 
-- Нужен zero-shot прогноз без обучения на своих данных
-- Важен баланс качества на коротких и длинных горизонтах
-- Хочется вероятностный выход без сложностей Monte Carlo
-- Есть современный GPU (Ampere+)
-
-**Когда искать альтернативы:**
-
-- Нужны ковариаты (динамические признаки) → DeepAR, TFT
-- Критична скорость инференса → PatchTST, N-HiTS
-- Нет доступа к GPU → Chronos на CPU, классические методы
+| Ресурс | Ссылка |
+|--------|--------|
+| Официальный код | [NX-AI/tirex](https://github.com/NX-AI/tirex) |
+| Модель на HuggingFace | [NX-AI/TiRex-1.1-gifteval](https://huggingface.co/NX-AI/TiRex-1.1-gifteval) |
+| Демо | [HuggingFace Spaces](https://huggingface.co/spaces/NX-AI/TiRex-Demo) |
+| xLSTM базовый код | [NX-AI/xlstm](https://github.com/NX-AI/xlstm) |
 
 ## Что дальше
 
-TiRex показывает, что улучшенные RNN (в форме xLSTM) могут конкурировать с трансформерами. Но это не единственный путь эволюции последовательных архитектур.
+TiRex показывает, что улучшенные RNN (в форме xLSTM) могут конкурировать с трансформерами и побеждать их благодаря способности к state tracking. Но это не единственный путь эволюции последовательных архитектур.
 
-В следующем посте мы рассмотрим FlowState — модель от IBM, построенную на State Space Models (SSM). SSM — это другой подход к моделированию последовательностей, который сочетает преимущества RNN (эффективный инференс) и свёрточных сетей (параллельное обучение). FlowState добавляет к этому уникальную возможность — time-scale invariance, позволяющую одной модели работать с данными разной частоты дискретизации без переобучения.
+В следующем посте мы рассмотрим FlowState — модель от IBM, построенную на State Space Models (SSM). SSM — другой подход к моделированию последовательностей, который сочетает преимущества RNN (эффективный инференс) и свёрточных сетей (параллельное обучение). FlowState добавляет уникальную возможность — time-scale invariance.
 
 :::{seealso}
-**Источники и ссылки:**
-- Merrill, N., et al. (2024). [TiRex: A Foundation Model for Time Series Forecasting](https://arxiv.org/abs/2402.02868). arXiv.
-- Beck, M., et al. (2024). [xLSTM: Extended Long Short-Term Memory](https://arxiv.org/abs/2405.04517). arXiv.
+**Источники:**
+- Auer, A., Podest, P., Klotz, D., Böck, S., Klambauer, G., Hochreiter, S. (2025). [TiRex: Zero-Shot Forecasting Across Long and Short Horizons with Enhanced In-Context Learning](https://arxiv.org/abs/2505.23719). NeurIPS 2025
+- Beck, M., et al. (2024). [xLSTM: Extended Long Short-Term Memory](https://arxiv.org/abs/2405.04517). NeurIPS 2024 Spotlight
+- [Официальный код TiRex](https://github.com/NX-AI/tirex) — NX-AI GitHub
+- [GIFT-Eval Leaderboard](https://huggingface.co/spaces/Salesforce/GIFT-Eval) — Salesforce HuggingFace
 :::

@@ -2,163 +2,242 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/34_moirai.ipynb)
 
-## Постановка проблемы: почему универсальность так сложна
+Moirai ([статья](https://arxiv.org/abs/2402.02592), ICML 2024 Oral) — first any-variate foundation model для временных рядов от Salesforce. В отличие от TimesFM и Chronos, которые работают только с univariate рядами, Moirai способна обрабатывать multivariate данные произвольной размерности, включая dynamic covariates[^moirai-paper]
 
-Когда мы рассматривали [TimesFM](https://arxiv.org/abs/2310.10688) и другие ранние фундаментальные модели, мы сталкивались с существенным ограничением — эти модели работают только с унивариативными временными рядами, то есть прогнозируют каждую переменную независимо от остальных. Однако в реальных задачах временные ряды редко существуют изолированно: продажи разных категорий товаров коррелируют между собой, температура в разных точках города взаимосвязана, финансовые показатели компании образуют единую систему.
+[^moirai-paper]: Woo, G., et al. "Unified Training of Universal Time Series Forecasting Transformers." ICML 2024 Oral. https://arxiv.org/abs/2402.02592
 
-[Moirai](https://arxiv.org/abs/2402.02592) (Masked Encoder-based Universal Time Series Forecasting Transformer), представленная исследователями Salesforce в феврале 2024 года, предлагает радикально иной подход к построению фундаментальной модели. Вместо того чтобы обрабатывать каждый ряд независимо, Moirai способна работать с многомерными временными рядами произвольной размерности — отсюда термин «any-variate», который авторы используют для описания своего подхода.
+## Семейство Moirai
 
-## Архитектура Moirai: masked encoder и flattening
+Salesforce выпустил несколько версий модели:
 
-В отличие от TimesFM и [Lag-Llama](https://arxiv.org/abs/2310.08278), которые используют decoder-only архитектуру, Moirai построена на основе masked encoder — архитектуры, более близкой к [BERT](https://arxiv.org/abs/1810.04805), чем к GPT. Это означает, что модель видит весь контекст (и прошлое, и «замаскированные» будущие позиции) и учится предсказывать значения в маскированных позициях.
+| Версия | Архитектура | Особенности |
+|--------|-------------|-------------|
+| **Moirai 1.0** | Masked encoder | Any-variate, multi-patch, mixture distribution[^moirai-10] |
+| **Moirai 1.1** | Masked encoder | Improved version, Jun 2024[^moirai-11] |
+| **Moirai-MoE** | Masked encoder + MoE | Sparse mixture of experts, Oct 2024[^moirai-moe] |
+| **Moirai 2.0** | **Decoder-only** | Quantile loss, single patch, Nov 2025[^moirai-20] |
 
-Центральная идея архитектуры Moirai заключается в «уплощении» (flattening) многомерного временного ряда в единую последовательность. Представим, что у нас есть три временных ряда: температура, влажность и давление, каждый из которых содержит 100 точек. Вместо того чтобы обрабатывать их как три отдельные последовательности длиной 100, Moirai объединяет их в одну последовательность, добавляя специальные идентификаторы, позволяющие модели различать, к какой переменной (variate) относится каждый токен.
+[^moirai-10]: Woo, G., et al. "Moirai." ICML 2024. https://arxiv.org/abs/2402.02592
+[^moirai-11]: GitHub: SalesforceAIResearch/uni2ts. "Jun 2024: Released Moirai-1.1-R model weights." https://github.com/SalesforceAIResearch/uni2ts
+[^moirai-moe]: Liu, X., et al. "Moirai-MoE: Empowering Time Series Foundation Models with Sparse Mixture of Experts." arXiv:2410.10469. https://arxiv.org/abs/2410.10469
+[^moirai-20]: Liu, C., et al. "Moirai 2.0: When Less Is More for Time Series Forecasting." arXiv:2511.11698. November 2025. https://arxiv.org/abs/2511.11698
 
-После уплощения каждый ряд разбивается на патчи фиксированной длины, и к каждому патчу добавляются два типа идентификаторов:
+**Moirai 2.0** — радикальный редизайн:
+➖ **2x быстрее** и **30x меньше** чем Moirai 1.0-Large
+➖ **#1 по MASE** на GIFT-Eval среди non-leaking моделей[^moirai-20-blog]
 
-- **Time ID** — позиционная кодировка, указывающая временную позицию патча внутри своего ряда
-- **Variate ID** — кодировка переменной, указывающая, к какому из исходных рядов принадлежит патч
+[^moirai-20-blog]: Salesforce Blog. "Introducing Moirai 2.0." November 2025. "Moirai 2.0 achieves the best MASE score among all non–test-data-leaking foundation models." https://www.salesforce.com/blog/moirai-2-0/
 
-Эта комбинация позволяет модели понимать как временные зависимости внутри каждого ряда, так и взаимосвязи между разными рядами в один момент времени.
+## Архитектура Moirai 1.x: Any-Variate
 
-## Multi-Patch Size Projection: адаптация к разным частотам
+### Flattening
 
-Одна из ключевых инноваций Moirai — использование нескольких размеров патчей (multi-patch size projection), что позволяет единой модели эффективно работать с данными разной частоты.
+Центральная идея — «уплощение» multivariate ряда в единую последовательность[^moirai-flatten]:
 
-Рассмотрим проблему подробнее. Если мы используем фиксированный размер патча, скажем, 32 точки, то для часовых данных этот патч покроет примерно 1.3 суток, а для годовых данных — 32 года. Очевидно, что семантика патча радикально различается в зависимости от частоты данных, и модель, обученная на одном размере патча, не сможет эффективно обобщаться на данные другой частоты.
+[^moirai-flatten]: Woo, G., et al. "Moirai." ICML 2024. Section 3.2: "flatten multivariate time series, considering all variates as a single sequence." https://arxiv.org/abs/2402.02592
 
-Moirai решает эту проблему, используя пять различных размеров патчей: 8, 16, 32, 64 и 128. Для каждого размера патча модель обучает отдельные input и output projection layers — линейные слои, которые преобразуют патч в эмбеддинг и обратно. Выбор размера патча происходит автоматически на основе частоты входных данных:
+```
+3-variate time series:
+  Variate 0 (target): [p0, p1, p2] → patch tokens
+  Variate 1 (target): [p0, p1, p2] → patch tokens
+  Variate 2 (covariate): [p0, p1, p2, p3] → patch tokens (включая forecast horizon)
+    ↓
+Flattened sequence: [v0_p0, v0_p1, v0_p2, v1_p0, v1_p1, ...]
+    + Time ID (позиция во времени)
+    + Variate ID (какой ряд)
+    ↓
+Masked Encoder Transformer
+    ↓
+Mixture Distribution parameters
+```
 
-|Частота данных|Размер патча|
-|---|---|
-|Секунды, минуты|128|
-|Часы|64|
-|Дни|32|
-|Недели|16|
-|Месяцы, кварталы, годы|8|
+### Multi-Patch Size Projection
 
-Эта таблица соответствий не является жёстким правилом — скорее это эвристика, найденная экспериментально. Для высокочастотных данных используются большие патчи, чтобы захватить больше контекста, а для низкочастотных — маленькие, чтобы не терять детали при малом количестве наблюдений.
+Moirai 1.x использует **5 размеров патчей** для разных частот[^moirai-patch]:
 
-Интересно отметить, что идея multi-patch projection концептуально близка к архитектуре Mixture of Experts (MoE), которая активно используется в современных языковых моделях вроде [Mixtral](https://arxiv.org/abs/2401.04088). В MoE разные «эксперты» специализируются на разных типах входных данных, и маршрутизатор выбирает, какого эксперта использовать для каждого токена. В Moirai аналогичную роль играют разные projection layers, а «маршрутизатором» служит частота данных.
+[^moirai-patch]: Woo, G., et al. "Moirai." ICML 2024. Section 3.1, Table 4. https://arxiv.org/abs/2402.02592
 
-## Any-Variate Attention: внимание, которое понимает структуру данных
+| Частота | Patch size |
+|---------|------------|
+| Seconds, minutes | 128 |
+| Hours | 64 |
+| Days | 32 |
+| Weeks | 16 |
+| Months, quarters, years | 8 |
 
-Стандартный механизм self-attention в трансформере не делает различий между токенами — все токены могут внимать всем остальным с одинаковыми правилами. Однако для многомерных временных рядов это не совсем корректно: взаимодействие между точками одного ряда в разные моменты времени принципиально отличается от взаимодействия между точками разных рядов в один момент времени.
+Для каждого размера — отдельные input/output projection layers
 
-Moirai вводит специальный механизм Any-Variate Attention[^moirai-anyvar], который учитывает эту структуру.
+### Any-Variate Attention с RoPE
 
-[^moirai-anyvar]: Woo, G., et al. "Unified Training of Universal Time Series Forecasting Transformers." ICML 2024. Section 3.2. https://arxiv.org/abs/2402.02592 Формула внимания модифицируется таким образом, чтобы включать информацию не только о позициях токенов (через обычные позиционные кодировки), но и о принадлежности токенов к разным переменным.
+Модифицированный attention с **Rotary Positional Embeddings (RoPE)**[^moirai-rope]:
 
-Технически это реализуется через [Rotary Positional Embeddings (RoPE)](https://arxiv.org/abs/2104.09864), которые кодируют позиционную информацию путём поворота векторов в пространстве эмбеддингов. В Moirai RoPE применяется отдельно для временной позиции и для индекса переменной, что обеспечивает два важных свойства:
+[^moirai-rope]: Woo, G., et al. "Moirai." ICML 2024. Section 3.2: "RoPE is applied separately for temporal position and variate index." https://arxiv.org/abs/2402.02592
 
-**Permutation equivariance относительно порядка переменных** — если мы поменяем порядок подачи переменных на вход (сначала влажность, потом температура, а не наоборот), выход модели изменится соответствующим образом, но структура предсказаний сохранится.
+➖ **Permutation equivariance** — порядок подачи variates можно менять
+➖ **Permutation invariance** — абсолютные индексы variates не важны
 
-**Permutation invariance относительно индексов переменных** — модель не привязывается к конкретным номерам переменных. Если в одном датасете температура имеет индекс 0, а в другом — индекс 5, это не влияет на качество прогноза, потому что модель работает с относительными позициями, а не абсолютными индексами.
+### Mixture Distribution
 
-## Mixture Distribution: вероятностное прогнозирование
+Moirai 1.x предсказывает параметры **смеси распределений**[^moirai-mixture]:
 
-Moirai — это вероятностная модель, которая предсказывает не конкретные значения, а параметры распределения вероятностей. Однако вместо использования одного фиксированного распределения (как, например, нормальное в [DeepAR](https://arxiv.org/abs/1704.04110) или Student-t в Lag-Llama), Moirai предсказывает параметры смеси распределений (mixture distribution).
-
-Смесь распределений — это взвешенная комбинация нескольких базовых распределений:
+[^moirai-mixture]: Woo, G., et al. "Moirai." ICML 2024. Section 3.3, Appendix B.3. https://arxiv.org/abs/2402.02592
 
 $$p(y) = \sum_{k=1}^{K} \pi_k \cdot f_k(y | \theta_k)$$
 
-где $\pi_k$ — веса компонент (должны суммироваться в единицу), а $f_k$ — плотности базовых распределений с параметрами $\theta_k$.
+Включает Student-t (общий случай), Log-normal (положительные значения), Negative binomial (count data)
 
-Moirai использует смесь нескольких типов распределений, включая нормальное, логнормальное и распределение Стьюдента. Это позволяет модели адаптироваться к различным характеристикам данных: симметричным и асимметричным распределениям, данным с тяжёлыми хвостами, строго положительным величинам и так далее.
+## Архитектура Moirai 2.0: Simpler is Better
 
-Выходной projection layer в Moirai предсказывает все параметры смеси: веса компонент и параметры каждого базового распределения. При обучении оптимизируется log-likelihood смеси на реальных значениях.
+Moirai 2.0 отказывается от ключевых решений 1.x[^moirai-20-changes]:
 
-## LOTSA: датасет масштаба фундаментальной модели
+[^moirai-20-changes]: Liu, C., et al. "Moirai 2.0." arXiv:2511.11698. Section 4: "Moirai 2.0 replaces masked-encoder training, multi-patch inputs, and mixture-distribution outputs with a simpler decoder-only architecture, single patch, and quantile loss." https://arxiv.org/abs/2511.11698
 
-Как и другие фундаментальные модели, Moirai требует для обучения масштабный и разнообразный датасет. Авторы собрали LOTSA (Large-scale Open Time Series Archive)[^moirai-lotsa] — коллекцию из 27 миллиардов наблюдений, охватывающих девять различных доменов:
+| Компонент | Moirai 1.x | Moirai 2.0 |
+|-----------|------------|------------|
+| Архитектура | Masked encoder | **Decoder-only** |
+| Patch sizes | Multi (5 sizes) | **Single** |
+| Output | Mixture distribution | **Quantile forecasts** |
+| Prediction | Single-token | **Multi-token** |
 
-[^moirai-lotsa]: Woo, G., et al. "Moirai." ICML 2024. Section 4, Table 3. https://arxiv.org/abs/2402.02592
+🔢 **Почему quantile loss лучше mixture?**
+➖ Более robust к outliers
+➖ Нет variance collapse/explosion
+➖ Напрямую оптимизирует CRPS метрику
+➖ Проще в обучении[^moirai-quantile]
 
-- Энергетика (потребление электроэнергии, солнечная и ветровая генерация)
-- Транспорт (трафик на дорогах, пассажиропоток)
-- Экономика и финансы
-- Природа и климат (температура, осадки, уровень воды)
-- Веб-аналитика (просмотры страниц, поисковые запросы)
-- Ритейл (продажи)
-- Здравоохранение
-- Облачные сервисы (метрики мониторинга)
-- Банкинг
+[^moirai-quantile]: Liu, C., et al. "Moirai 2.0." arXiv:2511.11698. Section 4.1: "Compared to the distribution NLL loss, which may suffer from variance collapse, explosion, or unstable gradients under outliers, the quantile loss is more robust." https://arxiv.org/abs/2511.11698
 
-LOTSA является открытым датасетом и доступен на [HuggingFace](https://huggingface.co/datasets/Salesforce/lotsa_data), что делает возможным воспроизведение результатов и дальнейшие исследования в области фундаментальных моделей временных рядов.
+## Moirai-MoE: Token-Level Specialization
 
-## Практическое применение Moirai
+Moirai-MoE (октябрь 2024) — альтернативный подход к heterogeneity[^moirai-moe-paper]:
 
-Установка и использование Moirai осуществляется через библиотеку [uni2ts](https://github.com/SalesforceAIResearch/uni2ts), разработанную командой Salesforce:
+[^moirai-moe-paper]: Liu, X., et al. "Moirai-MoE." arXiv:2410.10469. https://arxiv.org/abs/2410.10469
 
-python
+Вместо multi-patch (frequency-level specialization) → **Sparse MoE** (token-level specialization)
 
-```python
-# Установка
-pip install uni2ts
+🔢 **Проблемы frequency-level:**
+➖ Frequency — ненадёжный индикатор паттернов
+➖ Даже в коротком окне ряды могут иметь разные distributions[^moirai-moe-problem]
 
-# Загрузка модели и генерация прогноза
-import torch
-import pandas as pd
-from gluonts.dataset.pandas import PandasDataset
-from gluonts.dataset.split import split
+[^moirai-moe-problem]: Liu, X., et al. "Moirai-MoE." arXiv:2410.10469. Abstract: "Frequency is not a reliable indicator for grouping pretraining data." https://arxiv.org/abs/2410.10469
 
-from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+🔢 **Результат:**
+Moirai-MoE-Small (11M активных параметров) превосходит Moirai-Large (300M+) на многих бенчмарках
 
-# Загружаем данные в формате pandas DataFrame
-df = pd.read_csv('your_data.csv', index_col=0, parse_dates=True)
+## LOTSA и GIFT-Eval
 
-# Создаём GluonTS датасет
-dataset = PandasDataset.from_long_dataframe(
-    df, 
-    target='target_column',
-    item_id='series_id'
-)
+Salesforce создал важнейшую инфраструктуру для исследований:
 
-# Разделяем на train/test
-train, test_template = split(dataset, offset=-prediction_length)
+🔢 **LOTSA (Large-scale Open Time Series Archive)**[^lotsa]
+➖ **27B observations** across 9 domains
+➖ Energy, transport, finance, nature/climate, web, retail, healthcare, cloud, banking
+➖ Открытый датасет на HuggingFace
 
-# Загружаем модель (доступны размеры: small, base, large)
-model = MoiraiForecast(
-    module=MoiraiModule.from_pretrained("Salesforce/moirai-1.0-R-large"),
-    prediction_length=prediction_length,
-    context_length=512,
-    patch_size='auto',  # автоматический выбор размера патча
-    num_samples=100,    # количество сэмплов для вероятностного прогноза
-)
+[^lotsa]: Woo, G., et al. "Moirai." ICML 2024. Section 4, Table 2-3. https://arxiv.org/abs/2402.02592
 
-# Генерируем прогнозы
-predictor = model.create_predictor(batch_size=32)
-forecasts = list(predictor.predict(test_template.input))
-```
+🔢 **GIFT-Eval**[^gifteval]
+➖ Первый comprehensive benchmark для TSFM
+➖ **37 foundation models** на leaderboard
+➖ Explicit tracking of data leakage
 
-Moirai интегрирована с [GluonTS](https://ts.gluon.ai/stable/) — популярной библиотекой для прогнозирования временных рядов от AWS, что упрощает включение модели в существующие пайплайны.
+[^gifteval]: Aksu, T., et al. "GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation." arXiv:2410.10393. https://arxiv.org/abs/2410.10393
 
-## Moirai-MoE: следующий шаг эволюции
+## Размеры моделей
 
-В октябре 2024 года команда Salesforce представила Moirai-MoE — расширение оригинальной модели с использованием архитектуры Sparse Mixture of Experts. Вместо того чтобы использовать отдельные projection layers для разных частот (что является формой «человеческой» специализации), Moirai-MoE делегирует специализацию механизму MoE внутри трансформера.
+🔢 **Moirai 1.x:**
 
-В Moirai-MoE feedforward слои трансформера заменены на MoE-слои, где каждый токен обрабатывается только подмножеством «экспертов» (обычно top-2 из 8). Маршрутизация происходит автоматически на основе самих данных, без использования эвристик о частоте.
+| Размер | Параметры |
+|--------|-----------|
+| Small | 14M |
+| Base | 91M |
+| Large | 311M |
 
-Результаты впечатляют: Moirai-MoE-Small с 11M активируемых параметров превосходит Moirai-Large с 300M+ параметров на многих бенчмарках. Это достигается за счёт более эффективной специализации — каждый эксперт может сфокусироваться на определённом типе паттернов, а не пытаться быть универсальным.
+🔢 **Moirai 2.0:**
 
-## Ограничения и перспективы
+| Размер | Характеристики |
+|--------|----------------|
+| Small | 30x меньше чем 1.0-Large, 2x быстрее[^moirai-20-size] |
 
-При всех достоинствах Moirai, у модели есть ограничения:
+[^moirai-20-size]: Salesforce Blog. "Moirai 2.0 is twice as fast and thirty times smaller than its prior best version, Moirai 1.0-Large, while also performing better." https://www.salesforce.com/blog/moirai-2-0/
 
-**Вычислительная сложность any-variate attention** — квадратична по общему количеству токенов, что может стать проблемой для данных с большим числом переменных и длинной историей.
+## Данные обучения
 
-**Masked encoder architecture** — в отличие от decoder-only моделей, masked encoder требует фиксации горизонта прогноза при обучении, что несколько снижает гибкость.
+🔢 **Moirai 1.x:** LOTSA (~27B observations)[^moirai-data-1]
 
-**Сложность mixture distribution** — предсказание параметров смеси распределений добавляет сложности в обучение и инференс. В Moirai 2.0 авторы фактически отказались от mixture distribution в пользу квантильного прогнозирования.
+[^moirai-data-1]: Woo, G., et al. "Moirai." ICML 2024. https://arxiv.org/abs/2402.02592
 
-Тем не менее, Moirai остаётся одной из наиболее мощных и гибких фундаментальных моделей, особенно для задач, где важна работа с многомерными рядами и динамическими ковариатами.
+🔢 **Moirai 2.0:** Expanded corpus[^moirai-data-2]
+➖ **36M series, ~295B observations**
+➖ GIFT-Eval Pretrain + Train
+➖ Chronos mixup data (non-leaking)
+➖ KernelSynth synthetic data
+➖ Salesforce internal operational data (~2.15M series)
+
+[^moirai-data-2]: Liu, C., et al. "Moirai 2.0." arXiv:2511.11698. Section 2.4. https://arxiv.org/abs/2511.11698
+
+## Что умеет
+
+➖ **Any-variate** — произвольное количество переменных
+➖ **Dynamic covariates** — ряды с известными future values
+➖ **Zero-shot forecasting** — без обучения на ваших данных
+➖ **Probabilistic forecasts** — quantiles или mixture distribution
+➖ **Открытые веса** — research license
+
+## Когда использовать
+
+👍 **Хорошо работает:**
+➖ Multivariate данные с корреляциями между рядами
+➖ Dynamic covariates (известные future values)
+➖ Нужен any-variate flexibility
+➖ Zero-shot на разнородных данных
+
+👎 **Проблемы:**
+➖ **Вычислительная сложность** — any-variate attention квадратична[^moirai-complexity]
+➖ **Masked encoder** (1.x) — фиксированный горизонт при обучении
+➖ **Mixture distribution** (1.x) — сложнее в оптимизации[^moirai-mixture-problem]
+➖ **Diminishing returns** — performance plateaus с увеличением параметров[^moirai-scaling]
+
+[^moirai-complexity]: Woo, G., et al. "Moirai." ICML 2024. Section 3.2. https://arxiv.org/abs/2402.02592
+[^moirai-mixture-problem]: Liu, C., et al. "Moirai 2.0." arXiv:2511.11698: "Mixture of distributions was an intuitive way to enhance probabilistic forecasting, it proved empirically less effective in practice." https://arxiv.org/abs/2511.11698
+[^moirai-scaling]: Liu, C., et al. "Moirai 2.0." arXiv:2511.11698: "Model performance plateaus with increasing parameter count and declines at longer horizons." https://arxiv.org/abs/2511.11698
+
+## Moirai vs другие модели
+
+| Критерий | Moirai 2.0 | Moirai 1.x | Chronos-2 | TimesFM |
+|----------|------------|------------|-----------|---------|
+| Архитектура | Decoder-only | Masked enc | T5 encoder | Decoder-only |
+| Multivariate | ✓ | ✓ | ✓ | ✗ |
+| Covariates | ✓ | ✓ | ✓ | XReg |
+| Output | Quantiles | Mixture | Quantiles | Quantiles |
+| GIFT-Eval | #1 MASE* | Top-5 | SOTA | #1 open |
+
+*среди non-leaking моделей
+
+## Реализации
+
+| Ресурс | Ссылка |
+|--------|--------|
+| Официальный код (Uni2TS) | [SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts) |
+| Moirai 2.0 | [Salesforce/moirai-2.0-R-small](https://huggingface.co/Salesforce/moirai-2.0-R-small) |
+| Moirai 1.1 | [Salesforce/moirai-1.1-R-large](https://huggingface.co/Salesforce/moirai-1.1-R-large) |
+| Moirai-MoE | [Salesforce/moirai-moe-base](https://huggingface.co/Salesforce/moirai-moe-1.0-R-base) |
+| LOTSA dataset | [Salesforce/lotsa_data](https://huggingface.co/datasets/Salesforce/lotsa_data) |
+| GIFT-Eval Leaderboard | [Salesforce/GIFT-Eval](https://huggingface.co/spaces/Salesforce/GIFT-Eval) |
+
+## Что дальше
+
+Moirai показала, что any-variate forecasting возможен, а Moirai 2.0 продемонстрировала, что simpler is better: decoder-only + quantile loss + single patch превосходит сложную архитектуру 1.x.
+
+GIFT-Eval стал стандартным benchmark для foundation models, а проблема data leakage получила explicit tracking.
 
 :::{seealso}
-**Источники и ссылки:**
-- Woo, G., et al. (2024). [Unified Training of Universal Time Series Forecasting Transformers](https://arxiv.org/abs/2402.02592). ICML 2024.
-- Woo, G., et al. (2024). [Moirai-MoE: Empowering Time Series Foundation Models with Sparse Mixture of Experts](https://arxiv.org/abs/2410.10469). arXiv.
-- [Uni2TS код](https://github.com/SalesforceAIResearch/uni2ts) — Salesforce GitHub
-- [LOTSA dataset](https://huggingface.co/datasets/Salesforce/lotsa_data) — 27B наблюдений для pretraining
+**Источники:**
+- Woo, G., et al. (2024). [Unified Training of Universal Time Series Forecasting Transformers](https://arxiv.org/abs/2402.02592). ICML 2024 Oral
+- Liu, X., et al. (2024). [Moirai-MoE: Empowering Time Series Foundation Models with Sparse Mixture of Experts](https://arxiv.org/abs/2410.10469). arXiv
+- Liu, C., et al. (2025). [Moirai 2.0: When Less Is More for Time Series Forecasting](https://arxiv.org/abs/2511.11698). arXiv
+- Aksu, T., et al. (2024). [GIFT-Eval: A Benchmark For General Time Series Forecasting Model Evaluation](https://arxiv.org/abs/2410.10393). arXiv
+- [Uni2TS GitHub](https://github.com/SalesforceAIResearch/uni2ts)
+- [LOTSA dataset](https://huggingface.co/datasets/Salesforce/lotsa_data)
 - [Salesforce Blog: Moirai](https://www.salesforce.com/blog/moirai/)
+- [Salesforce Blog: Moirai 2.0](https://www.salesforce.com/blog/moirai-2-0/)
 :::

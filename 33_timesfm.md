@@ -1,299 +1,179 @@
-# TimesFM. Фундаментальная модель прогнозирования временных рядов от Google Research
+# TimesFM. Decoder-only foundation model от Google Research
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/33_timesfm.ipynb)
 
-## Введение: парадигма фундаментальных моделей приходит во временные ряды
+TimesFM ([статья](https://arxiv.org/abs/2310.10688), ICML 2024) — decoder-only foundation model для временных рядов от Google Research. Модель с 200M параметрами, обученная на 100+ миллиардах временных точек, демонстрирует zero-shot производительность, сопоставимую с supervised моделями, обученными специально на тестовых данных[^timesfm-paper]
 
-Когда мы говорим о революции больших языковых моделей, мы в первую очередь имеем в виду их способность решать разнообразные задачи без дополнительного обучения — то, что называется zero-shot inference. Модель GPT, обученная на триллионах токенов, способна отвечать на вопросы, писать код, переводить тексты и даже рассуждать о философии, хотя её никто специально этому не учил. Возникает естественный вопрос: можно ли перенести эту парадигму на временные ряды?
+[^timesfm-paper]: Das, A., et al. "A decoder-only foundation model for time-series forecasting." ICML 2024. https://arxiv.org/abs/2310.10688
 
-[TimesFM](https://arxiv.org/abs/2310.10688) (Time Series Foundation Model), представленная командой Google Research на конференции ICML 2024, даёт утвердительный ответ на этот вопрос. Это первая по-настоящему успешная попытка создать фундаментальную модель для прогнозирования, которая способна давать качественные прогнозы на данных, которых она никогда не видела при обучении, причём без какой-либо дополнительной настройки на конкретный датасет.
+TimesFM также доступен как **официальный продукт Google** в BigQuery через функцию `AI.FORECAST` — без необходимости управлять моделями или эндпоинтами[^timesfm-bigquery]
 
-Почему это важно для практика? Традиционный подход к прогнозированию временных рядов предполагает длительный цикл подготовки данных, конструирования признаков, выбора архитектуры модели, настройки гиперпараметров и валидации. Даже опытному специалисту этот процесс может занять дни или недели. TimesFM позволяет получить baseline-прогноз за минуты, причём этот baseline зачастую оказывается конкурентоспособным с тщательно настроенными supervised-моделями.
+[^timesfm-bigquery]: Google Cloud Blog. "TimesFM models in BigQuery and AlloyDB." November 2025. "TimesFM is a powerful time-series foundation model... pre-trained on a vast dataset of over 400 billion real-world time-points." https://cloud.google.com/blog/products/data-analytics/timesfm-models-in-bigquery-and-alloydb
 
-## Архитектура: decoder-only трансформер с патчингом
+## Идея
 
-### Почему именно decoder-only?
+Почему **decoder-only**, а не encoder-decoder?[^timesfm-decoder]
 
-TimesFM использует архитектуру трансформера «только декодировщик» (decoder-only)[^timesfm-arch] — ту же базовую структуру, что лежит в основе GPT. Это не случайный выбор, а осознанное решение, продиктованное спецификой задачи.
+[^timesfm-decoder]: Das, A., et al. "TimesFM." ICML 2024. Section 3. https://arxiv.org/abs/2310.10688
 
-[^timesfm-arch]: Das, A., et al. "A decoder-only foundation model for time-series forecasting." ICML 2024. Section 3. https://arxiv.org/abs/2310.10688
+Decoder-only архитектура (как в GPT) обучается предсказывать следующий элемент на основе всех предыдущих, используя **каузальное внимание** (токены не могут «заглядывать в будущее»). При inference это даёт гибкость: произвольная длина контекста → произвольный горизонт прогноза, патч за патчем.
 
-В классическом encoder-decoder трансформере (как в оригинальной модели [Attention Is All You Need](https://arxiv.org/abs/1706.03762) или в современном [T5](https://arxiv.org/abs/1910.10683)) кодировщик обрабатывает входную последовательность целиком, создавая контекстное представление, а декодировщик использует это представление для генерации выхода. Такая архитектура хорошо работает для задач sequence-to-sequence с фиксированными длинами, но создаёт проблемы для прогнозирования временных рядов, где нам нужна гибкость по длине как входа (контекста), так и выхода (горизонта прогноза).
+Ключевая инновация TimesFM — **асимметричный патчинг**:
+➖ Input patch = **32** точки (мелкие порции для «чтения» истории)
+➖ Output patch = **128** точек (крупные блоки для «выдачи» прогноза)
 
-Decoder-only архитектура решает эту проблему элегантно: модель обучается предсказывать следующий элемент последовательности на основе всех предыдущих элементов, используя каузальное (причинное) внимание, которое не позволяет токенам «заглядывать в будущее». При инференсе мы можем подать на вход контекст произвольной длины и сгенерировать прогноз на произвольный горизонт, последовательно предсказывая патч за патчем.
+Это позволяет делать меньше авторегрессионных шагов: для прогноза на 512 точек нужно всего 4 шага вместо 16[^timesfm-patching]
 
-### Патчинг: ключевая инновация
+[^timesfm-patching]: Das, A., et al. "TimesFM." ICML 2024. Section 6.2: "By keeping the output_patch_len longer than input_patch_len one can ensure fewer autoregressive steps." https://arxiv.org/abs/2310.10688
 
-Здесь мы подходим к центральной архитектурной идее TimesFM — патчингу. Вместо того чтобы обрабатывать временной ряд поточечно (каждое значение — отдельный токен), модель разбивает входную последовательность на непересекающиеся патчи (группы смежных точек), и каждый патч становится токеном для трансформера.
+## Архитектура
 
-Эта идея пришла из модели [PatchTST](https://arxiv.org/abs/2211.14730), которую мы обсуждали ранее, но в TimesFM она получила существенное развитие. Патчинг даёт несколько критически важных преимуществ:
-
-**Во-первых**, патчинг захватывает локальную семантику временного ряда. Когда мы смотрим на временной ряд продаж, отдельная точка (скажем, продажи в конкретный вторник) сама по себе малоинформативна. Но паттерн за неделю — рост к выходным, спад в понедельник — уже несёт семантическую информацию, которую модель может использовать. Патч фиксированной длины (например, 32 точки) позволяет модели работать именно с такими паттернами.
-
-**Во-вторых**, патчинг радикально ускоряет обучение и инференс. Если у нас временной ряд длиной 1024 точки и размер патча 32, то вместо 1024 токенов трансформер обрабатывает всего 32 токена. Учитывая, что вычислительная сложность self-attention квадратична относительно длины последовательности, это даёт ускорение примерно в (1024/32)² = 1024 раза.
-
-**В-третьих**, и это специфика именно TimesFM, модель использует асимметричные размеры входных и выходных патчей. Входной патч (input_patch_len) в стандартной конфигурации равен 32, а выходной патч (output_patch_len) — 128. Это означает, что модель «считывает» историю мелкими порциями, но «выдаёт» прогноз крупными блоками. Исследования авторов показали, что такой дизайн позволяет модели лучше обобщаться на произвольные горизонты прогнозирования.
-
-### Детали архитектуры
-
-Формально архитектура TimesFM состоит из следующих компонентов:
-
-**Input Residual Block** — многослойный перцептрон с остаточным соединением, который преобразует каждый входной патч (вектор из input_patch_len значений) в вектор размерности model_dim. Этот блок играет роль «эмбеддинга» для временных рядов, аналогично тому, как embedding layer в языковых моделях преобразует дискретные токены в непрерывные векторы.
-
-**Positional Encoding** — позиционные кодировки добавляются к выходам residual block, чтобы модель понимала порядок патчей во времени. Без позиционных кодировок трансформер инвариантен к перестановкам входа, что неприемлемо для временных рядов, где порядок критически важен.
-
-**Stacked Transformer Layers** — несколько слоёв трансформера с multi-head causal self-attention и feedforward-сетями. Каузальное внимание означает, что при вычислении представления для i-го патча модель видит только патчи с 1 по i, но не i+1 и далее.
-
-**Output Residual Block** — ещё один MLP с остаточным соединением, который преобразует выход трансформера в прогноз размера output_patch_len.
-
-Модель TimesFM 1.0-200M содержит 20 слоёв трансформера с размерностью 1280 и общим числом параметров около 200 миллионов. Это на несколько порядков меньше, чем современные LLM (GPT-4 содержит, по разным оценкам, от нескольких сотен миллиардов до триллиона параметров), но, как показывают эксперименты, этого достаточно для качественного zero-shot прогнозирования.
-
-## Обучение: откуда взять 100 миллиардов временных точек?
-
-Фундаментальная модель требует фундаментального объёма данных для обучения[^timesfm-data].
-
-[^timesfm-data]: Das, A., et al. "TimesFM." ICML 2024. Section 4: Google Trends + Wikipedia Pageviews. https://arxiv.org/abs/2310.10688 Это создаёт проблему: в отличие от текстов, которые можно скачать из интернета в практически неограниченных количествах, публично доступных временных рядов сравнительно мало. Стандартные бенчмарки вроде Monash Time Series Repository содержат десятки или сотни рядов, что категорически недостаточно для обучения foundation model.
-
-Команда Google Research решила эту проблему, комбинируя три источника данных:
-
-**Google Trends** — данные о популярности поисковых запросов, которые по своей природе являются временными рядами. Google имеет доступ к триллионам поисковых запросов, агрегированных по времени, что даёт огромный корпус разнообразных временных рядов: от сезонных (запросы про лыжи зимой, про кондиционеры летом) до трендовых (рост интереса к AI) и стационарных.
-
-**Wikipedia Pageviews** — статистика просмотров страниц Википедии, которая также представляет собой богатый источник временных рядов с разной динамикой: страницы про текущие события показывают резкие всплески, страницы про исторические личности — стабильную динамику, страницы про сезонные явления — периодичность.
-
-**Синтетические данные** — авторы генерировали искусственные временные ряды с известными свойствами: тренды, сезонность разных периодов, шум различных типов. Синтетические данные позволяют контролировать баланс между разными типами паттернов и гарантируют, что модель увидит достаточно примеров каждого типа.
-
-В сумме обучающий корпус содержит около 100 миллиардов временных точек — масштаб, сопоставимый с корпусами для обучения средних языковых моделей.
-
-Обучение проводится в decoder-only режиме: модель получает на вход последовательность патчей и должна предсказать следующий патч. Функция потерь — стандартная MSE (Mean Squared Error). Важная деталь: во время обучения применяется случайное маскирование части первого патча, что позволяет модели видеть контексты разной длины и не переобучаться на контексты, кратные размеру патча.
-
-## TimesFM 2.0 и 2.5: эволюция модели
-
-С момента первого релиза модель прошла несколько итераций:
-
-**TimesFM 1.0-200M** — первый публичный чекпоинт. Поддерживает контекст до 512 точек, только точечные прогнозы (без вероятностных оценок), работает с одномерными рядами.
-
-**TimesFM 2.0-500M** — расширенная версия с 500 миллионами параметров. Контекст увеличен до 2048 точек, добавлены экспериментальные квантильные головы для вероятностного прогнозирования. По результатам бенчмарков, версия 2.0 превосходит 1.0 на 20-25% по основным метрикам.
-
-**TimesFM 2.5-200M** — последняя версия на момент написания. Несмотря на то что число параметров вернулось к 200 миллионам, модель показывает улучшенные результаты за счёт более качественного обучения и расширенного корпуса данных. Эта версия также поддерживает continuous quantile head для вероятностного прогнозирования и ряд дополнительных опций.
-
-## Практическое применение TimesFM
-
-### Установка и базовый инференс
-
-Начнём с установки. TimesFM распространяется через PyPI, но для последних версий рекомендуется установка из GitHub-репозитория:
-
-```python
-# Клонируем репозиторий
-!git clone https://github.com/google-research/timesfm.git
-%cd timesfm
-
-# Устанавливаем пакет
-!pip install -e .
+```
+Input time series
+    ↓
+Разбиение на патчи (input_patch_len=32)
+    ↓
+Input Residual Block (MLP) → vector [model_dim]
+    ↓
+Positional Encoding
+    ↓
+Stacked Transformer Layers (num_layers=20)
+  - Multi-head causal self-attention
+  - Feed-forward network
+    ↓
+Output Residual Block (MLP) → forecast [output_patch_len=128]
 ```
 
-После установки можно загрузить модель и получить первый прогноз:
+🔢 **Параметры TimesFM 1.0-200M:**
+➖ num_layers = 20
+➖ model_dims = 1280
+➖ input_patch_len = 32
+➖ output_patch_len = 128
+➖ ~200M параметров[^timesfm-params]
 
-```python
-import torch
-import numpy as np
-import timesfm
+[^timesfm-params]: HuggingFace: google/timesfm-1.0-200m. "input_patch_len=32, output_patch_len=128, num_layers=20, model_dims=1280." https://huggingface.co/google/timesfm-1.0-200m
 
-# Настройка для оптимизации производительности
-torch.set_float32_matmul_precision("high")
+## Данные обучения
 
-# Загружаем модель TimesFM 2.5
-model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
-    "google/timesfm-2.5-200m-pytorch"
-)
+Корпус ~100B временных точек из трёх источников[^timesfm-data]:
 
-# Конфигурируем параметры инференса
-model.compile(
-    timesfm.ForecastConfig(
-        max_context=1024,      # максимальная длина контекста
-        max_horizon=256,       # максимальный горизонт прогноза
-        normalize_inputs=True, # нормализация входов
-        use_continuous_quantile_head=True,  # квантильные прогнозы
-        force_flip_invariance=True,         # инвариантность к знаку
-        infer_is_positive=True,             # неотрицательные значения
-        fix_quantile_crossing=True,         # коррекция квантилей
-    )
-)
+[^timesfm-data]: Das, A., et al. "TimesFM." ICML 2024. Section 4, Table 1: "Composition of TimesFM pretraining dataset." https://arxiv.org/abs/2310.10688
 
-# Генерируем прогноз для тестовых данных
-point_forecast, quantile_forecast = model.forecast(
-    horizon=12,
-    inputs=[
-        np.linspace(0, 1, 100),        # линейный тренд
-        np.sin(np.linspace(0, 20, 67)), # синусоида
-    ],
-)
+🔢 **Google Trends** — популярность поисковых запросов (cutoff: EoY 2022)
+🔢 **Wikipedia Pageviews** — просмотры страниц Википедии (cutoff: Nov 2023)
+🔢 **Синтетические данные** — искусственные ряды с контролируемыми паттернами
 
-print(f"Форма точечного прогноза: {point_forecast.shape}")      # (2, 12)
-print(f"Форма квантильного прогноза: {quantile_forecast.shape}") # (2, 12, 10)
-```
+Это создаёт domain bias: модель обучена преимущественно на веб-аналитике
 
-### Ключевые гиперпараметры
+## Версии модели
 
-Разберём гиперпараметры, которые влияют на качество прогнозов:
+| Версия | Параметры | Контекст | Особенности |
+|--------|-----------|----------|-------------|
+| **1.0-200M** | 200M | 512 | Первый релиз, только point forecasts[^timesfm-10] |
+| **2.0-500M** | 500M | 2048 | Finetuning, quantile heads, covariates (XReg)[^timesfm-20] |
+| **2.5-200M** | 200M | **16K** | #1 на GIFT-Eval, continuous quantile head[^timesfm-25] |
 
-**max_context** — максимальная длина истории, которую модель учитывает. Чем больше значение, тем больше долгосрочных паттернов (годовая сезонность, многолетние тренды) модель может захватить. Однако увеличение контекста требует больше памяти и замедляет инференс. Для дневных данных с многолетней историей рекомендуется 1024-2048, для часовых данных с недельной историей — 256-512.
+[^timesfm-10]: HuggingFace: google/timesfm-1.0-200m. "Context lengths up to 512 time points... focuses on point forecasts." https://huggingface.co/google/timesfm-1.0-200m
+[^timesfm-20]: PyPI: timesfm. "500m checkpoint... up to 25% better than v1.0... Launched finetuning support... Launched ~zero-shot covariate support." https://pypi.org/project/timesfm/
+[^timesfm-25]: MarkTechPost. "TimesFM-2.5 runs with 200M parameters... 16K context length... now tops the leaderboard across accuracy metrics (MASE, CRPS) among zero-shot foundation models." September 2025. https://www.marktechpost.com/2025/09/16/google-ai-ships-timesfm-2-5-smaller-longer-context-foundation-model-that-now-leads-gift-eval-zero-shot-forecasting/
 
-**max_horizon** — максимальный горизонт прогнозирования за один вызов. Если требуемый горизонт превышает это значение, модель будет генерировать прогноз авторегрессионно, что может накапливать ошибку.
+**TimesFM 2.5** — первая foundation model, которая побила AutoTheta на second-level frequency (исторически слабое место FM моделей)[^timesfm-autotheta]
 
-**normalize_inputs** — нормализация входных данных. Практически всегда рекомендуется включать, так как модель обучалась на нормализованных данных.
+[^timesfm-autotheta]: AI Horizon Forecast. "TimesFM-2.5 became the first foundation model to beat AutoTheta on second-level frequency." October 2025. https://aihorizonforecast.substack.com/p/timesfm-25-hands-on-tutorial-with
 
-**force_flip_invariance** — инвариантность к отражению ряда. Если включено, модель обрабатывает ряд и его отражение (умноженное на -1), усредняя результаты. Это повышает устойчивость для рядов, где направление не несёт семантического смысла (продажи растут или падают — это симметричные паттерны). Но для финансовых данных, где знак имеет значение (прибыль vs убыток), эту опцию лучше отключить.
+## Индикатор частоты
 
-**infer_is_positive** — ограничение на неотрицательность прогноза. Включайте для продаж, спроса, количества пользователей. Выключайте для финансовых показателей, которые могут быть отрицательными.
+TimesFM использует категориальный индикатор {0, 1, 2}[^timesfm-freq]:
 
-**fix_quantile_crossing** — коррекция пересечения квантилей. Иногда модель может выдать несогласованные квантили (например, 90%-квантиль меньше 50%-квантиля). Эта опция постпроцессингом исправляет такие нарушения.
+[^timesfm-freq]: HuggingFace: google/timesfm-1.0-200m. "TimesFM expects a categorical indicator valued in {0, 1, 2}." https://huggingface.co/google/timesfm-1.0-200m
 
-### Индикатор частоты
+| Значение | Частота | Рекомендация |
+|----------|---------|--------------|
+| 0 | Высокая | До daily (default) |
+| 1 | Средняя | Weekly, monthly |
+| 2 | Низкая | Quarterly, yearly |
 
-TimesFM использует категориальный индикатор частоты данных, который влияет на внутреннее поведение модели:
+Это не жёсткое ограничение — можно экспериментировать
 
-- **0** (по умолчанию) — высокочастотные данные с длинным горизонтом. Используйте для данных вплоть до дневной гранулярности.
-- **1** — среднечастотные данные. Используйте для недельных и месячных данных.
-- **2** — низкочастотные данные с коротким горизонтом. Используйте для квартальных и годовых данных.
+## Ковариаты через XReg
 
-Этот индикатор не является жёстким ограничением — вы можете экспериментировать с разными значениями для вашего конкретного случая.
+TimesFM не поддерживает ковариаты нативно, но версии 2.0+ предлагают **XReg** — external regressors через linear model[^timesfm-xreg]:
 
-## Практический пример: Store Sales Forecasting
+[^timesfm-xreg]: GitHub: google-research/timesfm. "Added back the covariate support through XReg for TimesFM 2.5." https://github.com/google-research/timesfm
 
-Рассмотрим применение TimesFM к реальной задаче — соревнованию Kaggle Store Sales - Time Series Forecasting. Задача состоит в прогнозировании продаж для 54 магазинов и 33 категорий товаров, что даёт 1782 отдельных временных ряда.
+Поддерживаемые типы:
+➖ Static Categorical (например, Category)
+➖ Static Numerical (например, Base_price)
+➖ Dynamic Categorical (например, Weekday, Has_promotion)
+➖ Dynamic Numerical (только known future, не past observed)
 
-```python
-import numpy as np
-import pandas as pd
-import timesfm
+Механизм: fit linear model на covariates → forecast residuals с TimesFM → combine
 
-# Загружаем данные
-hist_data = pd.read_csv(
-    'train.csv', 
-    parse_dates=['date']
-)
-new_data = pd.read_csv(
-    'test.csv',
-    parse_dates=['date']
-)
+## Что умеет
 
-# Для обучения берём данные начиная с 2015 года
-hist_data = hist_data[hist_data['date'] >= '2015-01-01'].copy()
+➖ **Zero-shot forecasting** — без обучения на ваших данных
+➖ **Произвольный контекст и горизонт** — decoder-only flexibility
+➖ **Probabilistic forecasts** (2.0+) — квантили 10th-90th
+➖ **Finetuning** (2.0+) — дообучение на своих данных
+➖ **Covariates** (2.0+) — через XReg
+➖ **BigQuery integration** — `AI.FORECAST` в SQL[^timesfm-sql]
+➖ **Открытые веса** — Apache-2.0 license
 
-# Логарифмируем зависимую переменную 
-# (стандартная практика для данных продаж)
-hist_data['sales'] = np.log1p(hist_data['sales'])
+[^timesfm-sql]: Google Cloud Documentation. "AI.FORECAST... using BigQuery ML's built-in TimesFM model." https://docs.cloud.google.com/bigquery/docs/timesfm-model
 
-# Создаём сегменты: комбинация магазин + категория
-hist_data['segment'] = (
-    hist_data['store_nbr'].astype(str) + ' + ' + 
-    hist_data['family'].astype(str)
-)
-new_data['segment'] = (
-    new_data['store_nbr'].astype(str) + ' + ' + 
-    new_data['family'].astype(str)
-)
-```
+## Когда использовать
 
-Обратите внимание, что мы не делаем никакого сложного feature engineering: не создаём лаги, скользящие средние, календарные признаки. Это сознательный выбор — мы хотим проверить, насколько хорошо TimesFM справится с задачей «из коробки».
+👍 **Хорошо работает:**
+➖ Zero-shot baseline за минуты
+➖ Univariate forecasting
+➖ Длинный контекст (до 16K в 2.5)
+➖ Интеграция с BigQuery/AlloyDB
+➖ Нужен открытый код и веса
 
-```python
-# Загружаем и конфигурируем модель
-model = timesfm.TimesFM_2p5_200M_torch()
-model.compile(
-    timesfm.ForecastConfig(
-        max_context=1024,
-        max_horizon=256,
-        normalize_inputs=True,
-        use_continuous_quantile_head=False,
-        force_flip_invariance=True,
-        infer_is_positive=True,
-        fix_quantile_crossing=False,
-    )
-)
+👎 **Проблемы:**
+➖ **Univariate only** — multivariate не поддерживается[^timesfm-univariate]
+➖ **Ковариаты ограничены** — только через XReg (linear model)
+➖ **Непрерывный контекст** — нет поддержки «дырок» в данных
+➖ **Domain bias** — обучен на веб-аналитике
+➖ **Apple Silicon не поддерживается** — зависимость lingvo[^timesfm-apple]
 
-# Задаём горизонт прогнозирования
-HORIZON = 16
+[^timesfm-univariate]: Das, A., et al. "TimesFM." ICML 2024. Section 7: "TimesFM is trained for univariate forecasting." https://arxiv.org/abs/2310.10688
+[^timesfm-apple]: HuggingFace: google/timesfm-1.0-200m. "The dependency lingvo does not support ARM architectures and the inference code is not working for machines with Apple silicon." https://huggingface.co/google/timesfm-1.0-200m
 
-# Формируем данные для модели
-segments = hist_data['segment'].unique()
-inputs = []
-for seg in segments:
-    seg_data = hist_data[hist_data['segment'] == seg].sort_values('date')
-    inputs.append(seg_data['sales'].values)
+## TimesFM vs другие модели
 
-# Получаем прогнозы для всех сегментов
-point_forecasts, _ = model.forecast(
-    horizon=HORIZON,
-    inputs=inputs,
-)
-```
+| Критерий | TimesFM 2.5 | Chronos-2 | TiRex | TimeGPT |
+|----------|-------------|-----------|-------|---------|
+| Архитектура | Decoder-only | T5 encoder | sLSTM | Enc-Dec |
+| Параметры | 200M | 120M | 35M | Closed |
+| Контекст | 16K | 2048 | 2048+ | Unknown |
+| Multivariate | ✗ | ✓ | ✗ | ✓ (2.1) |
+| Covariates | XReg | ✓ | ✗ | ✓ |
+| Открытые веса | ✓ | ✓ | ✓ | ✗ |
+| GIFT-Eval | #1 open-source | SOTA | #1 overall | N/A |
 
-После получения прогнозов нужно преобразовать их обратно в исходный масштаб и сформировать submission:
+## Реализации
 
-```python
-# Создаём словарь прогнозов
-forecast_dict = {seg: point_forecasts[i] for i, seg in enumerate(segments)}
+| Ресурс | Ссылка |
+|--------|--------|
+| Официальный код | [google-research/timesfm](https://github.com/google-research/timesfm) |
+| TimesFM 2.5 (PyTorch) | [google/timesfm-2.5-200m-pytorch](https://huggingface.co/google/timesfm-2.5-200m-pytorch) |
+| TimesFM 2.0 (JAX) | [google/timesfm-2.0-500m-jax](https://huggingface.co/google/timesfm-2.0-500m-jax) |
+| BigQuery ML | [AI.FORECAST documentation](https://docs.cloud.google.com/bigquery/docs/timesfm-model) |
+| PyPI | [timesfm](https://pypi.org/project/timesfm/) |
+| Google Research Blog | [A decoder-only foundation model](https://research.google/blog/a-decoder-only-foundation-model-for-time-series-forecasting/) |
 
-def get_forecast(row):
-    seg = row['segment']
-    # Определяем индекс дня в прогнозе
-    forecast_idx = (row['date'] - new_data['date'].min()).days
-    # Получаем прогноз и экспоненцируем
-    return np.expm1(forecast_dict[seg][forecast_idx])
+## Что дальше
 
-# Применяем к тестовым данным
-new_data['sales'] = new_data.apply(get_forecast, axis=1)
+TimesFM демонстрирует, что decoder-only архитектура с асимметричным патчингом эффективна для zero-shot forecasting. Модель занимает #1 среди open-source на GIFT-Eval и доступна как официальный продукт Google в BigQuery.
 
-# Формируем submission
-submission = pd.DataFrame({
-    'id': new_data['id'],
-    'sales': new_data['sales']
-})
-submission.to_csv('timesfm_submission.csv', index=False)
-```
-
-Результат на публичном лидерборде: **RMSLE = 0.39877**. Для сравнения, модель градиентного бустинга с тщательно сконструированными признаками (лаги, скользящие статистики, календарные переменные, кодирование категориальных признаков) даёт результат хуже. Это наглядно демонстрирует силу zero-shot подхода: модель, которая никогда не видела данные о продажах в эквадорских магазинах, способна прогнозировать их лучше, чем специализированная модель, обученная на этих конкретных данных.
-
-## Сравнение с другими foundation models
-
-TimesFM — не единственная фундаментальная модель для временных рядов. Рассмотрим её место в экосистеме:
-
-**[TimeGPT](https://docs.nixtla.io/) (Nixtla)** — первая коммерчески доступная foundation model для временных рядов. Использует полную encoder-decoder архитектуру и доступна только через API. TimesFM, в отличие от TimeGPT, полностью открыта и может быть запущена локально.
-
-**[Lag-Llama](https://arxiv.org/abs/2310.08278)** — foundation model, использующая архитектуру [LLaMA](https://arxiv.org/abs/2302.13971) и обученная на наборе Monash. Сфокусирована на вероятностном прогнозировании. По бенчмаркам несколько уступает TimesFM на задачах zero-shot.
-
-**[Chronos](https://arxiv.org/abs/2403.07815) (Amazon)** — использует токенизацию временных рядов и архитектуру [T5](https://arxiv.org/abs/1910.10683). Интересный подход, но требует дискретизации значений, что может терять информацию.
-
-**[Moirai](https://arxiv.org/abs/2402.02592)** — мультимодальная модель от Salesforce, поддерживающая различные типы временных рядов и external regressors.
-
-TimesFM занимает особое место благодаря нескольким факторам: полной открытости (модель, веса, код обучения), сбалансированному размеру (достаточно компактная для локального запуска, но достаточно мощная для качественных прогнозов) и сильным результатам на стандартных бенчмарках.
-
-## Ограничения и когда TimesFM не подходит
-
-При всех достоинствах TimesFM, важно понимать её ограничения:
-
-**Только унивариативные ряды**. Текущая версия работает с одномерными временными рядами. Если у вас многомерный ряд с коррелированными переменными, вам придётся прогнозировать каждую переменную независимо, теряя информацию о взаимосвязях.
-
-**Ограниченная поддержка ковариат**. Версия 2.0 добавила экспериментальную поддержку external regressors через отдельный модуль, но это не полноценная работа с экзогенными переменными, как в [TFT](https://arxiv.org/abs/1912.09363) или других специализированных архитектурах.
-
-**Контекст фиксированной частоты**. Модель ожидает, что контекст и горизонт имеют одинаковую частоту (нельзя подать дневные данные и попросить месячный прогноз).
-
-**Непрерывный контекст**. TimesFM не поддерживает «дырки» в данных. Если в вашем ряду есть пропуски, их нужно предварительно заполнить или интерполировать.
-
-**Возможное несоответствие домена**. Модель обучалась преимущественно на данных веб-аналитики (Google Trends, Wikipedia). Для рядов из совершенно других доменов (медицинские сигналы, сейсмические данные) zero-shot производительность может быть ниже.
-
-## Заключение
-
-TimesFM представляет собой важный шаг в развитии прогнозирования временных рядов. Впервые мы получили модель, которая может служить универсальным baseline для практически любой задачи прогнозирования, без необходимости сбора обучающих данных, конструирования признаков и настройки гиперпараметров.
-
-Это не означает, что TimesFM заменяет специализированные модели во всех случаях. Для критически важных задач, где каждый процент точности имеет значение, по-прежнему может быть оправдано создание кастомной модели с учётом специфики домена. Но TimesFM радикально меняет workflow: вместо того чтобы начинать с нуля, мы можем сначала получить baseline с помощью foundation model, а затем решить, стоит ли инвестировать время в улучшение.
-
-В следующих главах мы рассмотрим другие фундаментальные модели и научимся комбинировать их с классическими подходами для достижения максимального качества прогнозирования.
+В следующих главах мы рассмотрим другие foundation models и научимся комбинировать их с классическими подходами.
 
 :::{seealso}
-**Источники и ссылки:**
-- Das, A., et al. (2024). [A decoder-only foundation model for time-series forecasting](https://arxiv.org/abs/2310.10688). ICML 2024.
-- [Официальный код TimesFM](https://github.com/google-research/timesfm) — Google Research GitHub
-- [TimesFM на HuggingFace](https://huggingface.co/google/timesfm-2.5-200m-pytorch)
+**Источники:**
+- Das, A., Kong, W., Leblond, R., Sen, R. (2024). [A decoder-only foundation model for time-series forecasting](https://arxiv.org/abs/2310.10688). ICML 2024
+- [TimesFM GitHub](https://github.com/google-research/timesfm) — Google Research
+- [TimesFM HuggingFace Collection](https://huggingface.co/collections/google/timesfm-702f2d66e0591107c6758508)
+- [Google Research Blog](https://research.google/blog/a-decoder-only-foundation-model-for-time-series-forecasting/)
+- [TimesFM in BigQuery](https://cloud.google.com/blog/products/data-analytics/timesfm-models-in-bigquery-and-alloydb)
 :::
