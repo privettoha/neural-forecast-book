@@ -1,7 +1,5 @@
 ## N-BEATS
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/11_nbeats.ipynb)
-
 # N-BEATS: когда MLP достаточно
 
 ## Ключевая идея

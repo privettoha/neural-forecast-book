@@ -17,7 +17,6 @@ project:
         - file: 05_baselines
         - file: 05_benchmarks
         - file: 06_architecture
-        - file: architecture_map
         - file: 10_when_fixed_window_enough
     - title: "Часть 1: MLP-архитектуры"
       children:

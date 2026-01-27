@@ -1,5 +1,7 @@
 # N-HiTS: многомасштабная иерархия
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/privettoha/neural-forecast-book/blob/main/notebooks/11_nbeats.ipynb)
+
 ## Ключевая идея
 
 N-HiTS[^nhits] — это эволюция N-BEATS, которая решает две практические проблемы предшественника: **избыточные вычисления на длинных горизонтах** и **неспособность явно моделировать паттерны разных временных масштабов**.
