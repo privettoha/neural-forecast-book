@@ -2,8 +2,6 @@ version: 1
 project:
   title: "Нейросети для прогнозирования временных рядов"
   subtitle: "От классических архитектур до Foundation Models"
-  authors:
-    - name: Anton Kiriltsev
   github: https://github.com/privettoha/neural-forecast-book
   license: CC-BY-4.0
   jupyter: true
