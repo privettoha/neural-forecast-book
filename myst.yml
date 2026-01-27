@@ -49,6 +49,7 @@ site:
     logo: logo.png
     logo_dark: logo_dark.png
     favicon: logo.png
+    hide_footer: true
   nav: []
   actions:
     - title: GitHub
