@@ -12,10 +12,15 @@ project:
     - title: "Введение"
       children:
         - file: 01_why_neural_networks
-        - file: 02_how_book_works
-        - file: 03_baselines
-        - file: 04_benchmarks
-        - file: 05_architecture_map
+        - file: how_book_works
+        - file: 02_tokenization
+        - file: 03_task_types
+        - file: 04_datasets
+        - file: 05_baselines
+        - file: 05_benchmarks
+        - file: 06_architecture
+        - file: architecture_map
+        - file: 10_when_fixed_window_enough
     - title: "Часть 1: MLP-архитектуры"
       children:
         - file: 11_nbeats
