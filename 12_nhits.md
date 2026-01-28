@@ -44,7 +44,7 @@ N-HiTS вводит два механизма, работающих в связ�
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-![nhits](/Users/antonkiriltsev/Desktop/neural-forecast-book/images/NHITS.png)
+![nhits](images/NHITS.png)
 
 ### 1. Multi-rate input processing
 

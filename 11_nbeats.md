@@ -15,7 +15,7 @@ N-BEATS[^nbeats] — это архитектура, которая в 2020 го�
 ## Анатомия архитектуры
 
 N-BEATS состоит из трёх уровней иерархии: блоки (blocks) объединяются в стеки (stacks), стеки — в модель.
-![nbeats](/Users/antonkiriltsev/Desktop/neural-forecast-book/images/nbeats_architecture.png)
+![nbeats](images/nbeats_architecture.png)
 
 ### Блок: базовая единица вычислений
 
